@@ -653,6 +653,7 @@ struct request_params {
     std::string embedding_out;
     std::string reference_key;
     std::string reference_audio;
+    std::string response_format;
 
     int32_t n_threads = 2;
     int32_t n_ctx = 700;
@@ -2074,10 +2075,14 @@ static bool parse_request_json(
         if (req.reference_key.empty()) {
             get_json_string(body, "key", req.reference_key);
         }
+        if (req.reference_key.empty()) {
+            get_json_string(body, "voice", req.reference_key);
+        }
         get_json_string(body, "reference_audio", req.reference_audio);
         if (req.reference_audio.empty()) {
             get_json_string(body, "tts_reference_audio", req.reference_audio);
         }
+        get_json_string(body, "response_format", req.response_format);
 
         get_json_number(body, "threads", req.n_threads);
         get_json_number(body, "n_ctx", req.n_ctx);
@@ -3148,8 +3153,83 @@ int main(int argc, char ** argv) {
         res.set_content(j.dump(), "application/json; charset=utf-8");
     };
 
+    auto models_handler = [&](const httplib::Request &, httplib::Response & res) {
+        json data = json::array();
+
+        data.push_back({
+            {"id", "tts-1"},
+            {"object", "model"},
+            {"created", 1719792000},
+            {"owned_by", "system"}
+        });
+        data.push_back({
+            {"id", "tts-1-hd"},
+            {"object", "model"},
+            {"created", 1719792000},
+            {"owned_by", "system"}
+        });
+
+        if (!cfg.model.empty()) {
+            std::filesystem::path p(cfg.model);
+            data.push_back({
+                {"id", p.filename().string()},
+                {"object", "model"},
+                {"created", 1719792000},
+                {"owned_by", "system"}
+            });
+        }
+        if (!cfg.llm_api_model.empty()) {
+            data.push_back({
+                {"id", cfg.llm_api_model},
+                {"object", "model"},
+                {"created", 1719792000},
+                {"owned_by", "system"}
+            });
+        }
+
+        json j = {
+            {"object", "list"},
+            {"data", std::move(data)}
+        };
+        res.set_content(j.dump(), "application/json; charset=utf-8");
+    };
+
+    auto voices_handler = [&](const httplib::Request &, httplib::Response & res) {
+        std::vector<std::string> keys;
+        {
+            std::lock_guard<std::mutex> lock(ref_cache.mtx);
+            keys.reserve(ref_cache.embedding_by_key.size());
+            for (const auto & kv : ref_cache.embedding_by_key) {
+                keys.push_back(kv.first);
+            }
+        }
+        std::sort(keys.begin(), keys.end());
+
+        json data = json::array();
+        json voices = json::array();
+        for (const auto & key : keys) {
+            json v = {
+                {"voice_id", key},
+                {"name", key},
+                {"object", "voice"}
+            };
+            data.push_back(v);
+            voices.push_back(v);
+        }
+
+        json j = {
+            {"object", "list"},
+            {"data", std::move(data)},
+            {"voices", std::move(voices)}
+        };
+        res.set_content(j.dump(), "application/json; charset=utf-8");
+    };
+
     server.Get("/mio/references", reference_list_handler);
     server.Get("/v1/audio/references", reference_list_handler);
+    server.Get("/v1/models", models_handler);
+    server.Get("/v1/audio/models", models_handler);
+    server.Get("/v1/audio/voices", voices_handler);
 
     server.Get("/", [&](const httplib::Request &, httplib::Response & res) {
         res.set_header("Cache-Control", "no-store, no-cache, must-revalidate");
@@ -3962,14 +4042,45 @@ int main(int argc, char ** argv) {
             return;
         }
 
-        const size_t pcm_bytes = raw_n_audio * sizeof(int16_t);
-        auto wav_buf = std::make_shared<std::vector<uint8_t>>(44 + pcm_bytes);
-        build_wav_header(wav_buf->data(), (uint32_t) raw_sample_rate, (uint32_t) pcm_bytes);
+        std::string content_type = "audio/wav";
+        std::shared_ptr<std::vector<uint8_t>> audio_buf;
 
-        int16_t * pcm = reinterpret_cast<int16_t *>(wav_buf->data() + 44);
-        for (size_t i = 0; i < raw_n_audio; ++i) {
-            const float x = std::clamp(raw_audio[i], -1.0f, 1.0f);
-            pcm[i] = (int16_t) std::lrintf(x * 32767.0f);
+        if (rp.response_format == "pcm") {
+            content_type = "audio/pcm";
+            const size_t pcm_bytes = raw_n_audio * sizeof(int16_t);
+            audio_buf = std::make_shared<std::vector<uint8_t>>(pcm_bytes);
+            int16_t * pcm = reinterpret_cast<int16_t *>(audio_buf->data());
+            for (size_t i = 0; i < raw_n_audio; ++i) {
+                const float x = std::clamp(raw_audio[i], -1.0f, 1.0f);
+                pcm[i] = (int16_t) std::lrintf(x * 32767.0f);
+            }
+        } else {
+            if (rp.response_format == "mp3") {
+                content_type = "audio/mpeg";
+            } else if (rp.response_format == "opus") {
+                content_type = "audio/opus";
+            } else if (rp.response_format == "aac") {
+                content_type = "audio/aac";
+            } else if (rp.response_format == "flac") {
+                content_type = "audio/flac";
+            } else {
+                content_type = "audio/wav";
+            }
+
+            const size_t pcm_bytes = raw_n_audio * sizeof(int16_t);
+            audio_buf = std::make_shared<std::vector<uint8_t>>(44 + pcm_bytes);
+            build_wav_header(audio_buf->data(), (uint32_t) raw_sample_rate, (uint32_t) pcm_bytes);
+
+            int16_t * pcm = reinterpret_cast<int16_t *>(audio_buf->data() + 44);
+            for (size_t i = 0; i < raw_n_audio; ++i) {
+                const float x = std::clamp(raw_audio[i], -1.0f, 1.0f);
+                pcm[i] = (int16_t) std::lrintf(x * 32767.0f);
+            }
+
+            if (!rp.response_format.empty() && rp.response_format != "wav") {
+                std::fprintf(stderr, "warning: response_format '%s' requested, but serving as WAV (with Content-Type: %s) because native encoding is not supported\n",
+                             rp.response_format.c_str(), content_type.c_str());
+            }
         }
         mio_tts_audio_free(raw_audio);
 
@@ -3988,15 +4099,15 @@ int main(int argc, char ** argv) {
         }
 
         res.set_chunked_content_provider(
-                "audio/wav",
-                [wav_buf, offset = size_t(0)](size_t, httplib::DataSink & sink) mutable {
+                content_type,
+                [audio_buf, offset = size_t(0)](size_t, httplib::DataSink & sink) mutable {
                     constexpr size_t CHUNK = 64 * 1024;
-                    if (offset >= wav_buf->size()) {
+                    if (offset >= audio_buf->size()) {
                         sink.done();
                         return true;
                     }
-                    const size_t n = std::min(CHUNK, wav_buf->size() - offset);
-                    if (!sink.write(reinterpret_cast<const char *>(wav_buf->data() + offset), n)) {
+                    const size_t n = std::min(CHUNK, audio_buf->size() - offset);
+                    if (!sink.write(reinterpret_cast<const char *>(audio_buf->data() + offset), n)) {
                         return false;
                     }
                     offset += n;
@@ -4016,7 +4127,7 @@ int main(int argc, char ** argv) {
     server.Post("/v1/audio/remove_reference", delete_reference_handler);
     server.Post("/mio/tts", tts_handler);
     server.Post("/mio/tts/stream", tts_stream_handler);
-    server.Post("/v1/audio/speech", tts_handler);
+    server.Post("/v1/audio/speech", tts_stream_handler);
     server.Post("/v1/audio/speech/stream", tts_stream_handler);
 
     std::fprintf(stderr, "mio-tts-server listening on http://%s:%d\n", cfg.host.c_str(), cfg.port);
