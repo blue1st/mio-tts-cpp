@@ -194,6 +194,7 @@ public:
             mparams.vocab_only = false;
             mio_tts_compat::set_use_mmap(mparams, false);
             mio_tts_compat::set_use_mlock(mparams, false);
+            mio_tts_compat::set_check_tensors(mparams, true);
             llm_model_ = llama_model_load_from_file(llm_model_path.c_str(), mparams);
             if (llm_model_ == nullptr) {
                 last_error_ = "failed to load llm model";

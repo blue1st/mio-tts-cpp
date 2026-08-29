@@ -202,6 +202,17 @@ namespace mio_tts_compat {
     }
 
     template <typename T>
+    inline auto set_check_tensors_helper(T & p, bool val, int) -> decltype((void) (p.check_tensors = val)) {
+        p.check_tensors = val;
+    }
+    template <typename T>
+    inline void set_check_tensors_helper(T &, bool, long) {}
+
+    inline void set_check_tensors(llama_model_params & p, bool val) {
+        set_check_tensors_helper(p, val, 0);
+    }
+
+    template <typename T>
     inline auto set_offload_kqv_helper(T & p, bool val, int) -> decltype((void) (p.offload_kqv = val)) {
         p.offload_kqv = val;
     }

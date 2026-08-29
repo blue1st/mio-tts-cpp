@@ -154,6 +154,8 @@ inline bool ensure_llm_runtime(mobile_engine * engine, bool & loaded_now, std::s
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = std::max<int32_t>(0, engine->llm_n_gpu_layers);
     mparams.vocab_only = false;
+    mio_tts_compat::set_use_mmap(mparams, false);
+    mio_tts_compat::set_check_tensors(mparams, true);
 
     engine->llm_model = llama_model_load_from_file(engine->llm_model_path.c_str(), mparams);
     if (engine->llm_model == nullptr) {

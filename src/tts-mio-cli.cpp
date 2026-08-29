@@ -1204,6 +1204,8 @@ int main(int argc, char ** argv) {
                 llama_model_params mparams = llama_model_default_params();
                 mparams.n_gpu_layers = p.n_gpu_layers;
                 mparams.vocab_only = false;
+                mio_tts_compat::set_use_mmap(mparams, false);
+                mio_tts_compat::set_check_tensors(mparams, true);
 
                 llama_model * model = llama_model_load_from_file(p.model.c_str(), mparams);
                 if (model == nullptr) {
