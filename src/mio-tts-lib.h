@@ -245,6 +245,23 @@ namespace mio_tts_compat {
         set_op_offload_helper(p, val, 0);
     }
 
+    inline struct llama_batch make_llama_batch_with_pos(
+            const llama_token * tokens,
+            int32_t n_tokens,
+            int32_t start_pos,
+            bool is_last_chunk) {
+        struct llama_batch batch = llama_batch_init(n_tokens, 0, 1);
+        for (int32_t i = 0; i < n_tokens; ++i) {
+            batch.token[i] = tokens[i];
+            batch.pos[i] = start_pos + i;
+            batch.n_seq_id[i] = 1;
+            batch.seq_id[i][0] = 0;
+            batch.logits[i] = is_last_chunk && (i == n_tokens - 1);
+        }
+        batch.n_tokens = n_tokens;
+        return batch;
+    }
+
     template <typename Fn>
     inline auto call_penalties_5(Fn fn, int32_t n_vocab, int32_t last_n, float repeat, float freq, float present, int)
         -> decltype(fn(n_vocab, last_n, repeat, freq, present)) {

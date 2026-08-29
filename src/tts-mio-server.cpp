@@ -1505,8 +1505,11 @@ static bool generate_audio_tokens(
     generated.clear();
     for (int32_t pos = 0; pos < (int32_t) prompt_tokens.size(); pos += n_batch) {
         const int32_t n_chunk = std::min<int32_t>(n_batch, (int32_t) prompt_tokens.size() - pos);
-        llama_batch batch = llama_batch_get_one(prompt_tokens.data() + pos, n_chunk);
-        if (llama_decode(ctx, batch) != 0) {
+        const bool is_last_chunk = (pos + n_chunk == (int32_t) prompt_tokens.size());
+        llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(prompt_tokens.data() + pos, n_chunk, pos, is_last_chunk);
+        const int ret = llama_decode(ctx, batch);
+        llama_batch_free(batch);
+        if (ret != 0) {
             llama_sampler_free(sampler);
             err = "llama_decode failed on prompt";
             return false;
@@ -1514,6 +1517,7 @@ static bool generate_audio_tokens(
     }
 
     const int32_t n_vocab_len = llama_vocab_n_tokens(vocab);
+    int32_t curr_pos = (int32_t) prompt_tokens.size();
     for (int32_t i = 0; i < p.n_predict; ++i) {
         llama_token tok = llama_sampler_sample(sampler, ctx, -1);
         if (tok < 0 || (n_vocab_len > 0 && tok >= n_vocab_len)) {
@@ -1526,8 +1530,10 @@ static bool generate_audio_tokens(
             break;
         }
 
-        llama_batch batch = llama_batch_get_one(&tok, 1);
-        if (llama_decode(ctx, batch) != 0) {
+        llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(&tok, 1, curr_pos++, true);
+        const int ret = llama_decode(ctx, batch);
+        llama_batch_free(batch);
+        if (ret != 0) {
             llama_sampler_free(sampler);
             err = "llama_decode failed during generation";
             return false;
@@ -1597,8 +1603,11 @@ static bool generate_audio_tokens_streaming(
     generated.clear();
     for (int32_t pos = 0; pos < (int32_t) prompt_tokens.size(); pos += n_batch) {
         const int32_t n_chunk = std::min<int32_t>(n_batch, (int32_t) prompt_tokens.size() - pos);
-        llama_batch batch = llama_batch_get_one(prompt_tokens.data() + pos, n_chunk);
-        if (llama_decode(ctx, batch) != 0) {
+        const bool is_last_chunk = (pos + n_chunk == (int32_t) prompt_tokens.size());
+        llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(prompt_tokens.data() + pos, n_chunk, pos, is_last_chunk);
+        const int ret = llama_decode(ctx, batch);
+        llama_batch_free(batch);
+        if (ret != 0) {
             llama_sampler_free(sampler);
             err = "llama_decode failed on prompt";
             return false;
@@ -1606,6 +1615,7 @@ static bool generate_audio_tokens_streaming(
     }
 
     const int32_t n_vocab_len_stream = llama_vocab_n_tokens(vocab);
+    int32_t curr_pos_stream = (int32_t) prompt_tokens.size();
     for (int32_t i = 0; i < p.n_predict; ++i) {
         llama_token tok = llama_sampler_sample(sampler, ctx, -1);
         if (tok < 0 || (n_vocab_len_stream > 0 && tok >= n_vocab_len_stream)) {
@@ -1626,8 +1636,10 @@ static bool generate_audio_tokens_streaming(
             break;
         }
 
-        llama_batch batch = llama_batch_get_one(&tok, 1);
-        if (llama_decode(ctx, batch) != 0) {
+        llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(&tok, 1, curr_pos_stream++, true);
+        const int ret = llama_decode(ctx, batch);
+        llama_batch_free(batch);
+        if (ret != 0) {
             llama_sampler_free(sampler);
             err = "llama_decode failed during generation";
             return false;
