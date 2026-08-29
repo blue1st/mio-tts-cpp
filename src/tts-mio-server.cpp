@@ -2492,6 +2492,7 @@ static bool init_server_state(server_state & st, const server_config & cfg, std:
     if (!cfg.model.empty()) {
         llama_model_params mparams = llama_model_default_params();
         mparams.n_gpu_layers = cfg.n_gpu_layers;
+        mparams.vocab_only = false;
         mio_tts_compat::set_use_mmap(mparams, true);
         st.llm = llama_model_load_from_file(cfg.model.c_str(), mparams);
         if (st.llm == nullptr) {

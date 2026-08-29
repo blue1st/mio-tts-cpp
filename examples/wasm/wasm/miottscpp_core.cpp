@@ -191,6 +191,7 @@ public:
 
             llama_model_params mparams = llama_model_default_params();
             mparams.n_gpu_layers = 0; // LLM always on CPU in WASM (WebGPU lacks SSM op support)
+            mparams.vocab_only = false;
             mio_tts_compat::set_use_mmap(mparams, false);
             mio_tts_compat::set_use_mlock(mparams, false);
             llm_model_ = llama_model_load_from_file(llm_model_path.c_str(), mparams);

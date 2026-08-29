@@ -1200,6 +1200,7 @@ int main(int argc, char ** argv) {
             } else {
                 llama_model_params mparams = llama_model_default_params();
                 mparams.n_gpu_layers = p.n_gpu_layers;
+                mparams.vocab_only = false;
 
                 llama_model * model = llama_model_load_from_file(p.model.c_str(), mparams);
                 if (model == nullptr) {
