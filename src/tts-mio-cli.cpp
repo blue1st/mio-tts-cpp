@@ -1069,6 +1069,9 @@ static bool generate_audio_tokens(
     cparams.flash_attn_type = p.flash_attn_type;
     cparams.n_threads = resolve_threads(p.n_threads);
     cparams.n_threads_batch = cparams.n_threads;
+    mio_tts_compat::set_offload_kqv(cparams, true);
+    mio_tts_compat::set_no_perf(cparams, true);
+    mio_tts_compat::set_op_offload(cparams, true);
 
     llama_context * ctx = llama_init_from_model(model, cparams);
     if (ctx == nullptr) {

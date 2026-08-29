@@ -2564,7 +2564,9 @@ static bool init_worker_llm_context(server_state & st, std::string & err) {
     cparams.flash_attn_type = st.cfg.flash_attn_type;
     cparams.n_threads = resolve_threads(st.cfg.n_threads);
     cparams.n_threads_batch = cparams.n_threads;
-    cparams.no_perf = true;
+    mio_tts_compat::set_offload_kqv(cparams, true);
+    mio_tts_compat::set_no_perf(cparams, true);
+    mio_tts_compat::set_op_offload(cparams, true);
 
     st.llm_ctx = llama_init_from_model(st.llm, cparams);
     if (st.llm_ctx == nullptr) {

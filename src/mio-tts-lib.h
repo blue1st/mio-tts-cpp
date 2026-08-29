@@ -201,6 +201,39 @@ namespace mio_tts_compat {
         set_use_mlock_helper(p, val, 0);
     }
 
+    template <typename T>
+    inline auto set_offload_kqv_helper(T & p, bool val, int) -> decltype((void) (p.offload_kqv = val)) {
+        p.offload_kqv = val;
+    }
+    template <typename T>
+    inline void set_offload_kqv_helper(T &, bool, long) {}
+
+    inline void set_offload_kqv(llama_context_params & p, bool val) {
+        set_offload_kqv_helper(p, val, 0);
+    }
+
+    template <typename T>
+    inline auto set_no_perf_helper(T & p, bool val, int) -> decltype((void) (p.no_perf = val)) {
+        p.no_perf = val;
+    }
+    template <typename T>
+    inline void set_no_perf_helper(T &, bool, long) {}
+
+    inline void set_no_perf(llama_context_params & p, bool val) {
+        set_no_perf_helper(p, val, 0);
+    }
+
+    template <typename T>
+    inline auto set_op_offload_helper(T & p, bool val, int) -> decltype((void) (p.op_offload = val)) {
+        p.op_offload = val;
+    }
+    template <typename T>
+    inline void set_op_offload_helper(T &, bool, long) {}
+
+    inline void set_op_offload(llama_context_params & p, bool val) {
+        set_op_offload_helper(p, val, 0);
+    }
+
     template <typename Fn>
     inline auto call_penalties_5(Fn fn, int32_t n_vocab, int32_t last_n, float repeat, float freq, float present, int)
         -> decltype(fn(n_vocab, last_n, repeat, freq, present)) {
