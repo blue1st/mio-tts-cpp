@@ -335,7 +335,7 @@ inline bool generate_audio_tokens(
     cparams.n_threads_batch = cparams.n_threads;
     mio_tts_compat::set_offload_kqv(cparams, true);
     mio_tts_compat::set_no_perf(cparams, true);
-    mio_tts_compat::set_op_offload(cparams, true);
+    mio_tts_compat::set_op_offload(cparams, false);
 
     llama_context * ctx = llama_init_from_model(e.llm_model, cparams);
     if (ctx == nullptr) {
