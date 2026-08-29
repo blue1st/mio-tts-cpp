@@ -95,6 +95,8 @@ static inline ggml_tensor * dup_tensor_recursive(
     if (dst == nullptr) {
         return nullptr;
     }
+    dst->data = nullptr;
+    dst->buffer = nullptr;
 
     // Keep original tensor layout (not only shape).
     // Some graph nodes (e.g. permute/reshape views) rely on non-default nb[].
