@@ -1094,6 +1094,18 @@ bool miocodec_decoder::decode_tokens(
     }
 
     const int n_tokens = (int) tokens.size();
+    const int32_t max_code_id = (tok_embd_ != nullptr && tok_embd_->ne[1] > 0)
+        ? (int32_t) tok_embd_->ne[1] - 1
+        : 0;
+
+    std::vector<int32_t> safe_tokens = tokens;
+    for (int32_t & code : safe_tokens) {
+        if (code < 0) {
+            code = 0;
+        } else if (max_code_id > 0 && code > max_code_id) {
+            code = max_code_id;
+        }
+    }
     const int target_audio_len = n_tokens * hp_.samples_per_token;
     const int stft_target_frames = std::max(1, target_audio_len / std::max(1, hp_.hop_length));
     const int decoder_target_frames = std::max(
@@ -1487,7 +1499,7 @@ bool miocodec_decoder::decode_tokens(
     if (scalar_eps->data != nullptr) {
         ((float *) scalar_eps->data)[0] = 1e-9f;
     }
-    std::memcpy(inp_tokens->data, tokens.data(), (size_t) n_tokens * sizeof(int32_t));
+    std::memcpy(inp_tokens->data, safe_tokens.data(), (size_t) n_tokens * sizeof(int32_t));
     if (decoder_condition != nullptr) {
         std::memcpy(decoder_condition->data, cond_vec.data(), cond_vec.size() * sizeof(float));
     }
@@ -1584,7 +1596,7 @@ bool miocodec_decoder::decode_tokens(
                 mio_ggml_graph_copy_free(it->second.copy);
                 cache_decode_.erase(it);
             } else {
-                ggml_backend_tensor_set(inp_gpu, tokens.data(), 0, (size_t) n_tokens * sizeof(int32_t));
+                ggml_backend_tensor_set(inp_gpu, safe_tokens.data(), 0, (size_t) n_tokens * sizeof(int32_t));
 
                 if (hp_.dynamic_global) {
                     ggml_tensor * cond_gpu = mio_ggml_graph_copy_get_tensor(it->second.copy, "miocodec.decoder_condition");
