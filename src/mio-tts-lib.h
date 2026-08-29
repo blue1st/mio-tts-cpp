@@ -177,4 +177,28 @@ LLAMA_API void mio_tts_audio_free(float * audio);
 
 #ifdef __cplusplus
 }
+
+namespace mio_tts_compat {
+    template <typename Fn>
+    inline auto call_penalties_5(Fn fn, int32_t n_vocab, int32_t last_n, float repeat, float freq, float present, int)
+        -> decltype(fn(n_vocab, last_n, repeat, freq, present)) {
+        return fn(n_vocab, last_n, repeat, freq, present);
+    }
+
+    template <typename Fn>
+    inline auto call_penalties_5(Fn fn, int32_t n_vocab, int32_t last_n, float repeat, float freq, float present, long)
+        -> decltype(fn(last_n, repeat, freq, present)) {
+        (void) n_vocab;
+        return fn(last_n, repeat, freq, present);
+    }
+
+    inline struct llama_sampler * compat_llama_sampler_init_penalties(
+            int32_t n_vocab,
+            int32_t penalty_last_n,
+            float penalty_repeat,
+            float penalty_freq,
+            float penalty_present) {
+        return call_penalties_5(&::llama_sampler_init_penalties, n_vocab, penalty_last_n, penalty_repeat, penalty_freq, penalty_present, 0);
+    }
+}
 #endif

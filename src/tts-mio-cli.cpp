@@ -1023,11 +1023,12 @@ static bool tokenize_text(
     return !out_tokens.empty();
 }
 
-static llama_sampler * make_sampler(const cli_params & p) {
+static llama_sampler * make_sampler(const cli_params & p, const llama_vocab * vocab) {
     auto sparams = llama_sampler_chain_default_params();
     llama_sampler * smpl = llama_sampler_chain_init(sparams);
 
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, p.repeat_penalty, 0.0f, 0.0f));
+    const int32_t n_vocab = vocab != nullptr ? llama_vocab_n_tokens(vocab) : 0;
+    llama_sampler_chain_add(smpl, mio_tts_compat::compat_llama_sampler_init_penalties(n_vocab, 64, p.repeat_penalty, 0.0f, 0.0f));
 
     if (p.top_k > 0) {
         llama_sampler_chain_add(smpl, llama_sampler_init_top_k(p.top_k));
@@ -1075,7 +1076,7 @@ static bool generate_audio_tokens(
         return false;
     }
 
-    llama_sampler * sampler = make_sampler(p);
+    llama_sampler * sampler = make_sampler(p, vocab);
 
     generated.clear();
 
