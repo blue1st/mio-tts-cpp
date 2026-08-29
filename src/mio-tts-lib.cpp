@@ -808,6 +808,9 @@ struct mio_tts_params mio_tts_default_params(void) {
     p.max_reference_seconds = 20.0f;
     p.wavlm_flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
     p.miocodec_flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+    p.trim_trailing_silence = true;
+    p.silence_threshold_db = -40.0f;
+    p.fade_out_ms = 15.0f;
     return p;
 }
 
@@ -1043,6 +1046,38 @@ bool mio_tts_codes_save(
 
 void mio_tts_codes_free(int32_t * codes) {
     std::free(codes);
+}
+
+bool mio_tts_codes_trim_trailing(
+        int32_t * codes,
+        size_t * n_codes,
+        size_t max_repeat_tail) {
+    if (codes == nullptr || n_codes == nullptr || *n_codes == 0) {
+        return false;
+    }
+
+    const size_t orig_len = *n_codes;
+    if (orig_len <= 1) {
+        return false;
+    }
+
+    const int32_t last_code = codes[orig_len - 1];
+    size_t count = 0;
+    for (size_t i = orig_len; i > 0; --i) {
+        if (codes[i - 1] == last_code) {
+            count++;
+        } else {
+            break;
+        }
+    }
+
+    if (count > max_repeat_tail) {
+        const size_t remove_count = count - max_repeat_tail;
+        *n_codes = orig_len - remove_count;
+        return true;
+    }
+
+    return false;
 }
 
 bool mio_tts_reference_to_embedding(
@@ -1306,6 +1341,40 @@ bool mio_tts_synthesize(
         const float gain = (float) (0.95 / peak);
         for (float & x : audio) {
             x *= gain;
+        }
+    }
+
+    if (params.trim_trailing_silence && !audio.empty()) {
+        const int sr = ctx->impl.model->decoder.params().sample_rate;
+        const float threshold_amp = std::pow(10.0f, params.silence_threshold_db / 20.0f);
+
+        const size_t win_size = std::max<size_t>(1, (size_t)(sr * 0.010f));
+        size_t last_active_idx = 0;
+
+        for (size_t i = audio.size(); i >= win_size; i -= win_size) {
+            float max_amp = 0.0f;
+            for (size_t j = i - win_size; j < i; ++j) {
+                max_amp = std::max(max_amp, std::fabs(audio[j]));
+            }
+            if (max_amp >= threshold_amp) {
+                last_active_idx = i;
+                break;
+            }
+        }
+
+        if (last_active_idx > 0) {
+            const size_t pad_samples = (size_t)(sr * 0.050f);
+            const size_t new_size = std::min(audio.size(), last_active_idx + pad_samples);
+            audio.resize(new_size);
+        }
+
+        if (params.fade_out_ms > 0.0f && !audio.empty()) {
+            const size_t fade_samples = std::min(audio.size(), (size_t)(sr * (params.fade_out_ms / 1000.0f)));
+            const size_t start_fade = audio.size() - fade_samples;
+            for (size_t i = 0; i < fade_samples; ++i) {
+                const float factor = 1.0f - ((float) i / (float) fade_samples);
+                audio[start_fade + i] *= factor;
+            }
         }
     }
 

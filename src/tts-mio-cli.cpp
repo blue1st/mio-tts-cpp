@@ -69,6 +69,13 @@ struct cli_params {
     bool embedding_only = false;
     bool show_help = false;
     std::vector<int32_t> inline_codes;
+
+    bool auto_punctuate = true;
+    bool trim_trailing_codes = true;
+    bool trim_trailing_silence = true;
+    float silence_threshold_db = -40.0f;
+    float fade_out_ms = 15.0f;
+    int32_t max_repeat_tail = 4;
 };
 
 static void print_usage(const char * argv0) {
@@ -113,9 +120,37 @@ static void print_usage(const char * argv0) {
         "  -emb, --tts-mio-default-embedding-in FNAME\n"
         "  --tts-mio-embedding-out FNAME\n"
         "  --tts-mio-embedding-only\n\n"
+        "Post-processing & Trimming:\n"
+        "  --no-auto-punctuate             disable appending '。' to prompt\n"
+        "  --no-trim-trailing-codes        disable trimming trailing repeated codes\n"
+        "  --no-trim-trailing-silence      disable trailing silence trimming\n"
+        "  --silence-threshold-db F        silence threshold in dB (default: -40.0)\n"
+        "  --fade-out-ms F                 audio fade out duration in ms (default: 15.0)\n"
+        "  --max-repeat-tail N             max allowed repeated codes at tail (default: 4)\n\n"
         "Other:\n"
         "  -h, --help                      show this help\n",
         argv0);
+}
+
+static std::string ensure_ending_punctuation(const std::string & text) {
+    if (text.empty()) return text;
+    std::string trimmed = text;
+    while (!trimmed.empty() && std::isspace((unsigned char) trimmed.back())) {
+        trimmed.pop_back();
+    }
+    if (trimmed.empty()) return text;
+
+    const char last = trimmed.back();
+    if (last == '.' || last == '!' || last == '?') {
+        return trimmed;
+    }
+    if (trimmed.size() >= 3) {
+        const std::string tail3 = trimmed.substr(trimmed.size() - 3);
+        if (tail3 == "。" || tail3 == "！" || tail3 == "？") {
+            return trimmed;
+        }
+    }
+    return trimmed + "。";
 }
 
 static bool parse_i32(const char * s, int32_t & out) {
@@ -825,6 +860,18 @@ static bool parse_args(int argc, char ** argv, cli_params & p) {
             p.codes_only = true;
         } else if (arg == "--tts-mio-embedding-only") {
             p.embedding_only = true;
+        } else if (arg == "--no-auto-punctuate") {
+            p.auto_punctuate = false;
+        } else if (arg == "--no-trim-trailing-codes") {
+            p.trim_trailing_codes = false;
+        } else if (arg == "--no-trim-trailing-silence") {
+            p.trim_trailing_silence = false;
+        } else if (arg == "--silence-threshold-db") {
+            if (!needs_value(i, argc) || !parse_f32(argv[++i], p.silence_threshold_db)) return false;
+        } else if (arg == "--fade-out-ms") {
+            if (!needs_value(i, argc) || !parse_f32(argv[++i], p.fade_out_ms)) return false;
+        } else if (arg == "--max-repeat-tail") {
+            if (!needs_value(i, argc) || !parse_i32(argv[++i], p.max_repeat_tail)) return false;
         } else {
             return false;
         }
@@ -1006,8 +1053,9 @@ static bool generate_audio_tokens(
         std::string & err) {
     const llama_vocab * vocab = llama_model_get_vocab(model);
 
+    const std::string text = p.auto_punctuate ? ensure_ending_punctuation(p.prompt) : p.prompt;
     const std::string prompt_chat =
-        std::string("<|im_start|>user\n") + p.prompt + "<|im_end|>\n<|im_start|>assistant\n";
+        std::string("<|im_start|>user\n") + text + "<|im_end|>\n<|im_start|>assistant\n";
 
     std::vector<llama_token> prompt_tokens;
     if (!tokenize_text(vocab, prompt_chat, false, true, prompt_tokens, err)) {
@@ -1192,6 +1240,12 @@ int main(int argc, char ** argv) {
         }
 
         std::fprintf(stderr, "codes audio size: %zu\n", n_codes);
+        if (codes != nullptr && n_codes > 0 && p.trim_trailing_codes) {
+            const size_t orig_n = n_codes;
+            if (mio_tts_codes_trim_trailing(codes, &n_codes, (size_t) std::max<int32_t>(1, p.max_repeat_tail))) {
+                std::fprintf(stderr, "info: trimmed trailing repetitive audio codes (%zu -> %zu)\n", orig_n, n_codes);
+            }
+        }
     }
 
     if (!p.codes_out.empty()) {
@@ -1294,6 +1348,9 @@ int main(int argc, char ** argv) {
     synth_params.max_reference_seconds = p.max_reference_seconds;
     synth_params.wavlm_flash_attn_type = p.flash_attn_type;
     synth_params.miocodec_flash_attn_type = p.flash_attn_type;
+    synth_params.trim_trailing_silence = p.trim_trailing_silence;
+    synth_params.silence_threshold_db = p.silence_threshold_db;
+    synth_params.fade_out_ms = p.fade_out_ms;
 
     if (!mio_tts_synthesize(
                 mio,

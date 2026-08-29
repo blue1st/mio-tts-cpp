@@ -269,6 +269,27 @@ inline llama_sampler * make_sampler(const mobile_engine & e) {
     return smpl;
 }
 
+inline std::string ensure_ending_punctuation(const std::string & text) {
+    if (text.empty()) return text;
+    std::string trimmed = text;
+    while (!trimmed.empty() && std::isspace((unsigned char) trimmed.back())) {
+        trimmed.pop_back();
+    }
+    if (trimmed.empty()) return text;
+
+    const char last = trimmed.back();
+    if (last == '.' || last == '!' || last == '?') {
+        return trimmed;
+    }
+    if (trimmed.size() >= 3) {
+        const std::string tail3 = trimmed.substr(trimmed.size() - 3);
+        if (tail3 == "。" || tail3 == "！" || tail3 == "？") {
+            return trimmed;
+        }
+    }
+    return trimmed + "。";
+}
+
 inline bool generate_audio_tokens(
         const mobile_engine & e,
         const std::string & text,
@@ -283,8 +304,9 @@ inline bool generate_audio_tokens(
 
     const llama_vocab * vocab = llama_model_get_vocab(e.llm_model);
 
+    const std::string text_punct = ensure_ending_punctuation(text);
     const std::string prompt_chat =
-        std::string("<|im_start|>user\n") + text + "<|im_end|>\n<|im_start|>assistant\n";
+        std::string("<|im_start|>user\n") + text_punct + "<|im_end|>\n<|im_start|>assistant\n";
 
     std::vector<llama_token> prompt_tokens;
     if (!tokenize_text(vocab, prompt_chat, false, true, prompt_tokens, err)) {
@@ -973,6 +995,10 @@ inline bool synthesize_text_to_wav(
         err = std::string("mio_tts_tokens_to_codes failed: ") + c_err;
         engine->last_error = err;
         return false;
+    }
+
+    if (codes != nullptr && n_codes > 0) {
+        mio_tts_codes_trim_trailing(codes, &n_codes, 4);
     }
 
     // Keep footprint low on mobile by dropping local LLM weights before Mio synthesis.

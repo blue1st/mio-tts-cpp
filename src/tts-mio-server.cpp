@@ -2247,6 +2247,9 @@ static bool run_tts_request(
                     cleanup_codes();
                     return false;
                 }
+                if (codes_heap != nullptr && n_codes_heap > 0) {
+                    mio_tts_codes_trim_trailing(codes_heap, &n_codes_heap, 4);
+                }
                 codes_ptr = codes_heap;
                 n_codes = n_codes_heap;
             }

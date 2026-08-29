@@ -22,6 +22,9 @@ struct mio_tts_params {
     float max_reference_seconds;
     enum llama_flash_attn_type wavlm_flash_attn_type;
     enum llama_flash_attn_type miocodec_flash_attn_type;
+    bool trim_trailing_silence;
+    float silence_threshold_db;
+    float fade_out_ms;
 };
 
 LLAMA_API struct mio_tts_params mio_tts_default_params(void);
@@ -88,6 +91,11 @@ LLAMA_API bool mio_tts_codes_save(
         size_t err_size);
 
 LLAMA_API void mio_tts_codes_free(int32_t * codes);
+
+LLAMA_API bool mio_tts_codes_trim_trailing(
+        int32_t * codes,
+        size_t * n_codes,
+        size_t max_repeat_tail);
 
 LLAMA_API bool mio_tts_reference_to_embedding(
         struct mio_tts_context * ctx,
