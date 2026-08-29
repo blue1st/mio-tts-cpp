@@ -1417,6 +1417,14 @@ static bool tokenize_text(
     }
 
     out_tokens.resize((size_t) got);
+    const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+    if (n_vocab > 0) {
+        for (auto & t : out_tokens) {
+            if (t < 0 || t >= n_vocab) {
+                t = 0;
+            }
+        }
+    }
     return !out_tokens.empty();
 }
 
@@ -1505,8 +1513,12 @@ static bool generate_audio_tokens(
         }
     }
 
+    const int32_t n_vocab_len = llama_vocab_n_tokens(vocab);
     for (int32_t i = 0; i < p.n_predict; ++i) {
         llama_token tok = llama_sampler_sample(sampler, ctx, -1);
+        if (tok < 0 || (n_vocab_len > 0 && tok >= n_vocab_len)) {
+            break;
+        }
         llama_sampler_accept(sampler, tok);
         generated.push_back(tok);
 
@@ -1593,8 +1605,12 @@ static bool generate_audio_tokens_streaming(
         }
     }
 
+    const int32_t n_vocab_len_stream = llama_vocab_n_tokens(vocab);
     for (int32_t i = 0; i < p.n_predict; ++i) {
         llama_token tok = llama_sampler_sample(sampler, ctx, -1);
+        if (tok < 0 || (n_vocab_len_stream > 0 && tok >= n_vocab_len_stream)) {
+            break;
+        }
         llama_sampler_accept(sampler, tok);
         generated.push_back(tok);
 

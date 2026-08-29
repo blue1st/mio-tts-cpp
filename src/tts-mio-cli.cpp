@@ -1091,8 +1091,12 @@ static bool generate_audio_tokens(
         return false;
     }
 
+    const int32_t n_vocab_len = llama_vocab_n_tokens(vocab);
     for (int32_t i = 0; i < p.n_predict; ++i) {
         llama_token tok = llama_sampler_sample(sampler, ctx, -1);
+        if (tok < 0 || (n_vocab_len > 0 && tok >= n_vocab_len)) {
+            break;
+        }
         llama_sampler_accept(sampler, tok);
         generated.push_back(tok);
 
