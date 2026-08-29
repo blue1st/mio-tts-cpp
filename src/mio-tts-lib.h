@@ -179,6 +179,28 @@ LLAMA_API void mio_tts_audio_free(float * audio);
 }
 
 namespace mio_tts_compat {
+    template <typename T>
+    inline auto set_use_mmap_helper(T & p, bool val, int) -> decltype((void) (p.use_mmap = val)) {
+        p.use_mmap = val;
+    }
+    template <typename T>
+    inline void set_use_mmap_helper(T &, bool, long) {}
+
+    inline void set_use_mmap(llama_model_params & p, bool val) {
+        set_use_mmap_helper(p, val, 0);
+    }
+
+    template <typename T>
+    inline auto set_use_mlock_helper(T & p, bool val, int) -> decltype((void) (p.use_mlock = val)) {
+        p.use_mlock = val;
+    }
+    template <typename T>
+    inline void set_use_mlock_helper(T &, bool, long) {}
+
+    inline void set_use_mlock(llama_model_params & p, bool val) {
+        set_use_mlock_helper(p, val, 0);
+    }
+
     template <typename Fn>
     inline auto call_penalties_5(Fn fn, int32_t n_vocab, int32_t last_n, float repeat, float freq, float present, int)
         -> decltype(fn(n_vocab, last_n, repeat, freq, present)) {
