@@ -52,7 +52,7 @@ FROM ubuntu:${UBUNTU_VERSION}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ROCM_PATH="/opt/rocm"
 ENV PATH="/opt/rocm/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib"
 
 # 実行に必要な最小限のシステムライブラリのみインストール
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -72,12 +72,10 @@ COPY --from=builder /app/build/mio-tts-server /app/mio-tts-server
 COPY --from=builder /app/build/lib/ /app/lib/
 COPY --from=builder /opt/rocm/ /opt/rocm/
 
-# Push 前検証: 共有ライブラリの依存関係がすべて解決していること、およびバイナリ起動を確認
-RUN LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}" ldd /app/mio-tts-server && \
-    if LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}" ldd /app/mio-tts-server | grep "not found"; then \
-        echo "Error: missing shared library detected!" && exit 1; \
-    fi && \
-    LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}" ./mio-tts-server --help > /dev/null
+# Push 前検証: 共有ライブラリの依存関係がすべて解決し、バイナリが正常起動することを確認
+RUN ldd /app/mio-tts-server && \
+    ! ldd /app/mio-tts-server | grep "not found" && \
+    /app/mio-tts-server --help > /dev/null
 
 EXPOSE 18089
 

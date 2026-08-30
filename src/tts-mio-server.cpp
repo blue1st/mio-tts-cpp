@@ -1321,7 +1321,8 @@ static bool parse_args(int argc, char ** argv, server_config & cfg) {
         } else if (arg == "--tts-max-reference-seconds") {
             if (!needs_value(i, argc) || !parse_f32(argv[++i], cfg.max_reference_seconds)) return false;
         } else if (arg == "-h" || arg == "--help") {
-            return false;
+            print_usage(argv[0]);
+            std::exit(0);
         } else {
             return false;
         }
