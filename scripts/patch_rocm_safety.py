@@ -47,19 +47,31 @@ def patch_rope(cuda_dir):
             modified = True
 
     if "row_indices_dev" not in src:
-        target_rows = "row_indices     = (const int64_t *) set_rows->src[1]->data;"
-        repl_rows = ("const ggml_tensor * sr1 = set_rows->src[1];\n"
-                     "        row_indices     = (const int64_t *) sr1->data;\n"
-                     "        if (sr1->buffer && ggml_backend_buffer_is_host(sr1->buffer)) {\n"
-                     "            row_indices_dev.alloc(ggml_nelements(sr1));\n"
-                     "            CUDA_CHECK(cudaMemcpyAsync(row_indices_dev.ptr, sr1->data, ggml_nbytes(sr1), cudaMemcpyHostToDevice, stream));\n"
-                     "            row_indices = row_indices_dev.ptr;\n"
-                     "        }")
-        if target_rows in src:
-            src = src.replace("const int64_t * row_indices     = nullptr;",
-                              "const int64_t * row_indices     = nullptr;\n    ggml_cuda_pool_alloc<int64_t> row_indices_dev(ctx.pool());")
-            src = src.replace(target_rows, repl_rows)
-            modified = True
+        # Declare stream and row_indices_dev at start of ggml_cuda_op_rope_impl
+        src = re.sub(
+            r'(\bvoid\s+ggml_cuda_op_rope_impl\s*\([^{]+\{\s*)',
+            r'\1cudaStream_t stream = ctx.stream();\n    ggml_cuda_pool_alloc<int64_t> row_indices_dev(ctx.pool());\n    ',
+            src
+        )
+        # Patch row_indices assignment inside if (set_rows != nullptr)
+        src = re.sub(
+            r'row_indices\s*=\s*\(const\s+int64_t\s*\*\)\s*set_rows->src\[1\]->data;',
+            r'''const ggml_tensor * sr1 = set_rows->src[1];
+        row_indices = (const int64_t *) sr1->data;
+        if (sr1->buffer && ggml_backend_buffer_is_host(sr1->buffer)) {
+            row_indices_dev.alloc(ggml_nelements(sr1));
+            CUDA_CHECK(cudaMemcpyAsync(row_indices_dev.ptr, sr1->data, ggml_nbytes(sr1), cudaMemcpyHostToDevice, stream));
+            row_indices = row_indices_dev.ptr;
+        }''',
+            src
+        )
+        # Remove subsequent duplicate declaration of cudaStream_t stream = ctx.stream();
+        src = re.sub(
+            r'(\n\s*cudaStream_t\s+stream\s*=\s*ctx\.stream\(\);\s*\n)',
+            r'\n',
+            src
+        )
+        modified = True
 
     if modified:
         with open(p, "w", encoding="utf-8") as f:
