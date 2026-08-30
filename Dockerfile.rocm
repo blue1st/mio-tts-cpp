@@ -40,7 +40,7 @@ RUN mkdir -p /app/build/lib && \
 
 # ランタイムに必要な最小限の ROCm / OpenMP 共有ライブラリを /app/rocm-lib に抽出
 RUN mkdir -p /app/rocm-lib && \
-    find /opt/rocm/lib /opt/rocm/core-*/lib /opt/rocm/llvm/lib \
+    find /opt/rocm \
       \( -name "libamdhip64.so*" -o \
          -name "libhiprtc.so*" -o \
          -name "libhsa-runtime64.so*" -o \
