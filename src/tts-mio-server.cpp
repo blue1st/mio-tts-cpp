@@ -1503,6 +1503,17 @@ static bool generate_audio_tokens(
     llama_sampler * sampler = make_sampler(p, vocab);
 
     generated.clear();
+    {
+        int32_t tok_min = prompt_tokens.empty() ? 0 : prompt_tokens[0];
+        int32_t tok_max = tok_min;
+        for (auto t : prompt_tokens) {
+            if (t < tok_min) tok_min = t;
+            if (t > tok_max) tok_max = t;
+        }
+        std::fprintf(stderr, "mio: llm decode: prompt_len=%zu n_batch=%d n_vocab=%d tok_range=[%d, %d]\n",
+                     prompt_tokens.size(), n_batch,
+                     llama_vocab_n_tokens(vocab), tok_min, tok_max);
+    }
     for (int32_t pos = 0; pos < (int32_t) prompt_tokens.size(); pos += n_batch) {
         const int32_t n_chunk = std::min<int32_t>(n_batch, (int32_t) prompt_tokens.size() - pos);
         const bool is_last_chunk = (pos + n_chunk == (int32_t) prompt_tokens.size());
@@ -2523,6 +2534,11 @@ static bool init_server_state(server_state & st, const server_config & cfg, std:
         mparams.vocab_only = false;
         mio_tts_compat::set_use_mmap(mparams, false);
         mio_tts_compat::set_check_tensors(mparams, true);
+        std::fprintf(stderr, "mio: loading LLM model: n_gpu_layers=%d, use_mmap=%d, vocab_only=%d, check_tensors=%d\n",
+                     mparams.n_gpu_layers,
+                     (int) mparams.use_mmap,
+                     (int) mparams.vocab_only,
+                     (int) mparams.check_tensors);
         st.llm = llama_model_load_from_file(cfg.model.c_str(), mparams);
         if (st.llm == nullptr) {
             err = std::string("failed to load model: ") + cfg.model;
@@ -2595,7 +2611,7 @@ static bool init_worker_llm_context(server_state & st, std::string & err) {
     cparams.n_threads_batch = cparams.n_threads;
     mio_tts_compat::set_offload_kqv(cparams, true);
     mio_tts_compat::set_no_perf(cparams, true);
-    mio_tts_compat::set_op_offload(cparams, false);
+    mio_tts_compat::set_op_offload(cparams, true);
 
     st.llm_ctx = llama_init_from_model(st.llm, cparams);
     if (st.llm_ctx == nullptr) {
