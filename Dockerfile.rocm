@@ -35,27 +35,32 @@ RUN mkdir build && cd build && \
       -DCMAKE_BUILD_TYPE=Release && \
     cmake --build . --config Release -j$(nproc)
 
-# ビルドされた共有ライブラリ（libllama.so, libggml.so 等）を /app/build/lib に集約
-RUN mkdir -p /app/build/lib && \
-    find /app/build -name "*.so*" -exec cp -P {} /app/build/lib/ \;
-
-# 不要な巨大コンパイラ・ヘッダー・ドキュメント等を削除し、/opt/rocm をランタイム用に軽量化
-RUN rm -rf /opt/rocm/llvm \
+# 不要な巨大コンパイラ・ヘッダー・ドキュメント等を削除し、成果物を /app/dist に集約
+RUN mkdir -p /app/dist/app/lib /app/dist/opt && \
+    cp /app/build/mio-tts-server /app/dist/app/ && \
+    find /app/build -name "*.so*" -exec cp -P {} /app/dist/app/lib/ \; && \
+    rm -rf /opt/rocm/llvm \
            /opt/rocm/include \
            /opt/rocm/share \
            /opt/rocm/core-*/include \
            /opt/rocm/core-*/share && \
-    find /opt/rocm -name "*.a" -delete
+    find /opt/rocm -name "*.a" -delete && \
+    cp -a /opt/rocm /app/dist/opt/
 
-# 実行用ステージ (軽量な Ubuntu ベース: 約300-500MB)
+# ビルド時検証: 依存関係がすべて解決し、バイナリが正常起動することを確認
+RUN LD_LIBRARY_PATH="/app/dist/app/lib:/app/dist/opt/rocm/lib:/app/dist/opt/rocm/core-10.0/lib" ldd /app/dist/app/mio-tts-server && \
+    ! LD_LIBRARY_PATH="/app/dist/app/lib:/app/dist/opt/rocm/lib:/app/dist/opt/rocm/core-10.0/lib" ldd /app/dist/app/mio-tts-server | grep "not found" && \
+    LD_LIBRARY_PATH="/app/dist/app/lib:/app/dist/opt/rocm/lib:/app/dist/opt/rocm/core-10.0/lib" /app/dist/app/mio-tts-server --help > /dev/null
+
+# 実行用ステージ (最小限の3レイヤー構成)
 FROM ubuntu:${UBUNTU_VERSION}
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV ROCM_PATH="/opt/rocm"
-ENV PATH="/opt/rocm/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib"
+ENV DEBIAN_FRONTEND=noninteractive \
+    ROCM_PATH="/opt/rocm" \
+    PATH="/opt/rocm/bin:${PATH}" \
+    LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib"
 
-# 実行に必要な最小限のシステムライブラリのみインストール
+# 1. 実行に必要な最小限のシステムライブラリのみインストール (レイヤー1)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     libnuma1 \
@@ -68,15 +73,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# 実行バイナリ、アプリ共有ライブラリ、および軽量化された /opt/rocm をコピー
-COPY --from=builder /app/build/mio-tts-server /app/mio-tts-server
-COPY --from=builder /app/build/lib/ /app/lib/
-COPY --from=builder /opt/rocm/ /opt/rocm/
-
-# Push 前検証: 共有ライブラリの依存関係がすべて解決し、バイナリが正常起動することを確認
-RUN ldd /app/mio-tts-server && \
-    ! ldd /app/mio-tts-server | grep "not found" && \
-    /app/mio-tts-server --help > /dev/null
+# 2. アプリケーションおよび軽量化された ROCm ランタイムを一括配置 (レイヤー2)
+COPY --from=builder /app/dist/ /
 
 EXPOSE 18089
 
