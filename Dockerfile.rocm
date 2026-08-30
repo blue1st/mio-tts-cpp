@@ -33,27 +33,45 @@ RUN mkdir build && cd build && \
       -DCMAKE_BUILD_TYPE=Release && \
     cmake --build . --config Release -j$(nproc)
 
-# ビルドされたすべての共有ライブラリ（libllama.so, libggml.so 等）を /app/build/lib に集約
+# ビルドされた共有ライブラリ（libllama.so, libggml.so 等）を /app/build/lib に集約
 RUN mkdir -p /app/build/lib && \
     find /app/build -name "*.so*" -exec cp -P {} /app/build/lib/ \;
 
-# 実行用ステージ
-FROM rocm/dev-ubuntu-22.04:${ROCM_VERSION}
+# ランタイムに必要な最小限の ROCm 共有ライブラリ（HIP/HSA/ROCm-core）を /app/rocm-lib に抽出
+RUN mkdir -p /app/rocm-lib && \
+    find /opt/rocm/lib /opt/rocm/core-*/lib \
+      \( -name "libamdhip64.so*" -o \
+         -name "libhiprtc.so*" -o \
+         -name "libhsa-runtime64.so*" -o \
+         -name "librocm-core.so*" -o \
+         -name "librocm_smi64.so*" -o \
+         -name "libamd_comgr.so*" \) \
+      -exec cp -P {} /app/rocm-lib/ \; 2>/dev/null || true
 
+# 実行用ステージ (軽量な Ubuntu 22.04 ベース: 約300-500MB)
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
 ENV ROCM_PATH="/opt/rocm"
 ENV PATH="/opt/rocm/bin:${PATH}"
-# /app/lib を優先的に検索するように追加
-ENV LD_LIBRARY_PATH="/app/lib:/app:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:${LD_LIBRARY_PATH}"
 
-RUN apt-get update && apt-get install -y \
+# 実行に必要な最小限のシステムライブラリのみインストール
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
+    libnuma1 \
+    libdrm2 \
+    libdrm-amdgpu1 \
+    libelf1 \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# 実行ファイルと集約した共有ライブラリをコピー
+# 実行バイナリ、アプリ共有ライブラリ、および抽出した ROCm ランタイムをコピー
 COPY --from=builder /app/build/mio-tts-server /app/mio-tts-server
 COPY --from=builder /app/build/lib/ /app/lib/
+COPY --from=builder /app/rocm-lib/ /opt/rocm/lib/
 
 EXPOSE 18089
 
