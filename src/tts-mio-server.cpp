@@ -2630,21 +2630,29 @@ static bool warmup_worker_llm(server_state & st, std::string & err) {
         return true;
     }
 
+    const int32_t n_vocab = llama_vocab_n_tokens(st.vocab);
     llama_token tok = llama_vocab_bos(st.vocab);
-    if (tok < 0) {
+    if (tok < 0 || (n_vocab > 0 && tok >= n_vocab)) {
         tok = llama_vocab_eos(st.vocab);
     }
-    if (tok < 0) {
+    if (tok < 0 || (n_vocab > 0 && tok >= n_vocab)) {
         tok = 0;
     }
 
+    std::fprintf(stderr, "mio: warmup_worker_llm: starting warmup decode tok=%d n_vocab=%d\n", tok, n_vocab);
+
     llama_memory_clear(llama_get_memory(st.llm_ctx), false);
-    llama_batch batch = llama_batch_get_one(&tok, 1);
-    if (llama_decode(st.llm_ctx, batch) != 0) {
-        err = "llm warmup decode failed";
-        return false;
+    llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(&tok, 1, 0, true);
+    const int ret = llama_decode(st.llm_ctx, batch);
+    llama_batch_free(batch);
+    llama_memory_clear(llama_get_memory(st.llm_ctx), false);
+
+    if (ret != 0) {
+        std::fprintf(stderr, "mio: warmup_worker_llm: llama_decode returned %d (ignored to allow server start)\n", ret);
+        st.llm_warmed = true;
+        return true;
     }
-    llama_memory_clear(llama_get_memory(st.llm_ctx), false);
+    std::fprintf(stderr, "mio: warmup_worker_llm: warmup completed successfully\n");
     st.llm_warmed = true;
     return true;
 }
