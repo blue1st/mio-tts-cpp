@@ -94,59 +94,54 @@ def patch_set_rows(cuda_dir):
                 f.write(src)
             print(f"[patch_rocm] Patched {p}")
 
-def patch_all_cuda_files(cuda_dir):
-    # Scan and patch row_indices and pos in all cuda backend files (norm.cu, rope.cu, etc.)
-    for fname in os.listdir(cuda_dir):
-        if not (fname.endswith(".cu") or fname.endswith(".cpp")):
+def patch_rope(cuda_dir):
+    p = os.path.join(cuda_dir, "rope.cu")
+    if not os.path.exists(p):
+        return
+    with open(p, "r", encoding="utf-8") as f:
+        src = f.read()
+    if "pos_dev" not in src:
+        target = "const int32_t * pos = (const int32_t *) src1_d;"
+        repl = ("const int32_t * pos = (const int32_t *) src1_d;\n"
+                "    ggml_cuda_pool_alloc<int32_t> pos_dev(ctx.pool());\n"
+                "    if (src1->buffer && ggml_backend_buffer_is_host(src1->buffer)) {\n"
+                "        pos_dev.alloc(ggml_nelements(src1));\n"
+                "        CUDA_CHECK(cudaMemcpyAsync(pos_dev.ptr, src1->data, ggml_nbytes(src1), cudaMemcpyHostToDevice, stream));\n"
+                "        pos = pos_dev.ptr;\n"
+                "    }")
+        if target in src:
+            src = src.replace(target, repl, 1)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(src)
+            print(f"[patch_rocm] Patched {p}")
+
+def patch_fusions(cuda_dir):
+    # In ggml-cuda.cu / norm.cu, disable fusing set_rows or rope when input indices are on host
+    candidates = [
+        os.path.join(cuda_dir, "ggml-cuda.cu"),
+        os.path.join(cuda_dir, "norm.cu"),
+    ]
+    for p in candidates:
+        if not os.path.exists(p):
             continue
-        p = os.path.join(cuda_dir, fname)
         with open(p, "r", encoding="utf-8") as f:
             src = f.read()
         
         modified = False
         
-        # 1. Patch set_rows->src[1]->data or sr1->data for row_indices
-        if "row_indices_dev" not in src:
-            # Pattern: row_indices = (const int64_t *) set_rows->src[1]->data;
-            pat1 = r'(\brow_indices\s*=\s*\(const\s+int64_t\s*\*\)\s*([a-zA-Z0-9_>.-]+->src\[1\])->data;)'
-            if re.search(pat1, src):
-                src = re.sub(
-                    r'(\bconst\s+int64_t\s*\*\s*row_indices\s*=\s*nullptr;)',
-                    r'\1\n    ggml_cuda_pool_alloc<int64_t> row_indices_dev(ctx.pool());',
-                    src
-                )
-                src = re.sub(
-                    pat1,
-                    r'''const ggml_tensor * _sr1 = \2;
-        row_indices = (const int64_t *) _sr1->data;
-        if (_sr1->buffer && ggml_backend_buffer_is_host(_sr1->buffer)) {
-            row_indices_dev.alloc(ggml_nelements(_sr1));
-            CUDA_CHECK(cudaMemcpyAsync(row_indices_dev.ptr, _sr1->data, ggml_nbytes(_sr1), cudaMemcpyHostToDevice, stream));
-            row_indices = row_indices_dev.ptr;
-        }''',
-                    src
-                )
-                # Ensure stream is declared before row_indices assignment if needed
-                if "cudaStream_t stream = ctx.stream();" in src:
-                    # Move stream to top of function if it was after
-                    pass
-                modified = True
+        # In should_fuse_rope_set_rows, check host buffer
+        target1 = "static bool ggml_cuda_should_fuse_rope_set_rows(const ggml_tensor * rope,\n                                                const ggml_tensor * view,\n                                                const ggml_tensor * set_rows) {\n\n    if (rope->op != GGML_OP_ROPE || view->op != GGML_OP_VIEW || set_rows->op != GGML_OP_SET_ROWS) {\n        return false;\n    }"
+        repl1 = target1 + "\n\n    if (set_rows->src[1]->buffer && ggml_backend_buffer_is_host(set_rows->src[1]->buffer)) {\n        return false;\n    }"
+        if target1 in src and "ggml_backend_buffer_is_host(set_rows->src[1]->buffer)" not in src:
+            src = src.replace(target1, repl1, 1)
+            modified = True
 
-        # 2. Patch pos in any kernel launcher (rms_norm_mul_rope / rope)
-        if "pos_dev" not in src and ("rms_norm_mul_rope" in src or "rope" in fname):
-            pat2 = r'(\bconst\s+int32_t\s*\*\s*pos\s*=\s*\(const\s+int32_t\s*\*\)\s*([a-zA-Z0-9_>.-]+)->data;)'
-            if re.search(pat2, src):
-                src = re.sub(
-                    pat2,
-                    r'''\1\n    ggml_cuda_pool_alloc<int32_t> pos_dev(ctx.pool());\n    if (\2 && \2->buffer && ggml_backend_buffer_is_host(\2->buffer)) {\n        pos_dev.alloc(ggml_nelements(\2));\n        CUDA_CHECK(cudaMemcpyAsync(pos_dev.ptr, \2->data, ggml_nbytes(\2), cudaMemcpyHostToDevice, stream));\n        pos = pos_dev.ptr;\n    }''',
-                    src
-                )
-                modified = True
-
+        # In any other should_fuse with set_rows
+        # If any function has should_fuse...set_rows, disallow host buffer
         if modified:
             with open(p, "w", encoding="utf-8") as f:
                 f.write(src)
-            print(f"[patch_rocm] Patched {p}")
+            print(f"[patch_rocm] Patched fusions in {p}")
 
 def main():
     if len(sys.argv) < 2:
@@ -159,7 +154,8 @@ def main():
     if os.path.isdir(cuda_dir):
         patch_getrows(cuda_dir)
         patch_set_rows(cuda_dir)
-        patch_all_cuda_files(cuda_dir)
+        patch_rope(cuda_dir)
+        patch_fusions(cuda_dir)
 
 if __name__ == "__main__":
     main()
