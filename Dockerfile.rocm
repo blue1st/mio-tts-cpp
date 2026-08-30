@@ -1,5 +1,6 @@
+ARG UBUNTU_VERSION=22.04
 ARG ROCM_VERSION=10.0.0-full
-FROM rocm/dev-ubuntu-22.04:${ROCM_VERSION} AS builder
+FROM rocm/dev-ubuntu-${UBUNTU_VERSION}:${ROCM_VERSION} AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ROCM_PATH="/opt/rocm"
@@ -48,8 +49,8 @@ RUN mkdir -p /app/rocm-lib && \
          -name "libamd_comgr.so*" \) \
       -exec cp -P {} /app/rocm-lib/ \; 2>/dev/null || true
 
-# 実行用ステージ (軽量な Ubuntu 22.04 ベース: 約300-500MB)
-FROM ubuntu:22.04
+# 実行用ステージ (軽量な Ubuntu ベース: 約300-500MB)
+FROM ubuntu:${UBUNTU_VERSION}
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ROCM_PATH="/opt/rocm"

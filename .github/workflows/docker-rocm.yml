@@ -17,6 +17,7 @@ on:
   workflow_dispatch:
 
 env:
+  UBUNTU_VERSION: "22.04"
   ROCM_VERSION: "10.0.0"
   ROCM_BASE_IMAGE: "10.0.0-full"
 
@@ -70,6 +71,7 @@ jobs:
           file: ./Dockerfile.rocm
           push: true
           build-args: |
+            UBUNTU_VERSION=${{ env.UBUNTU_VERSION }}
             ROCM_VERSION=${{ env.ROCM_BASE_IMAGE }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
