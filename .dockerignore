@@ -1,0 +1,8 @@
+.git
+build
+models
+output
+*.wav
+*.gguf
+.DS_Store
+llama.cpp

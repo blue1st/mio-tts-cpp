@@ -5,7 +5,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV ROCM_PATH="/opt/rocm"
 ENV HIP_PATH="/opt/rocm"
 ENV PATH="/opt/rocm/bin:/opt/rocm/llvm/bin:${PATH}"
-ARG LLAMA_BRANCH=main
 ARG LLAMA_CPP_TAG=b10689
 
 # ビルドに必要なシステムパッケージのみインストール
@@ -18,8 +17,8 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# 1. mio-tts-cpp のソースを取得
-RUN git clone -b ${LLAMA_BRANCH} https://github.com/blue1st/mio-tts-cpp.git .
+# 1. mio-tts-cpp のソースを配置
+COPY . /app
 
 # 2. 依存する llama.cpp を配置 (b10689 でバージョン固定)
 RUN git clone --depth 1 --branch ${LLAMA_CPP_TAG} https://github.com/ggerganov/llama.cpp.git /app/llama.cpp
