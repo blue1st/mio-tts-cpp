@@ -1,5 +1,5 @@
-# ビルド用ステージ
-FROM rocm/dev-ubuntu-22.04:10.0.0-full AS builder
+ARG ROCM_VERSION=10.0.0-full
+FROM rocm/dev-ubuntu-22.04:${ROCM_VERSION} AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ROCM_PATH="/opt/rocm"
@@ -38,7 +38,8 @@ RUN mkdir -p /app/build/lib && \
     find /app/build -name "*.so*" -exec cp -P {} /app/build/lib/ \;
 
 # 実行用ステージ
-FROM rocm/dev-ubuntu-22.04:10.0.0-full
+ARG ROCM_VERSION=10.0.0-full
+FROM rocm/dev-ubuntu-22.04:${ROCM_VERSION}
 
 ENV ROCM_PATH="/opt/rocm"
 ENV PATH="/opt/rocm/bin:${PATH}"

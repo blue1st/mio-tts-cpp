@@ -16,6 +16,10 @@ on:
       - '.github/workflows/docker-rocm.yml'
   workflow_dispatch:
 
+env:
+  ROCM_VERSION: "10.0.0"
+  ROCM_BASE_IMAGE: "10.0.0-full"
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -51,10 +55,12 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
+            type=raw,value=rocm${{ env.ROCM_VERSION }}-latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=rocm${{ env.ROCM_VERSION }}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=rocm-latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=branch,prefix=rocm-
-            type=semver,pattern={{version}},prefix=rocm-
+            type=ref,event=branch,prefix=rocm${{ env.ROCM_VERSION }}-
+            type=semver,pattern={{version}},prefix=rocm${{ env.ROCM_VERSION }}-
             type=sha,prefix=rocm-,format=short
 
       - name: Build and push Docker image
@@ -63,6 +69,8 @@ jobs:
           context: .
           file: ./Dockerfile.rocm
           push: true
+          build-args: |
+            ROCM_VERSION=${{ env.ROCM_BASE_IMAGE }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

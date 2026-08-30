@@ -1,6 +1,6 @@
 services:
   mio-tts:
-    image: ghcr.io/blue1st/mio-tts-cpp:rocm-latest
+    image: ghcr.io/blue1st/mio-tts-cpp:rocm10.0.0-latest
     build:
       context: .
       dockerfile: Dockerfile.rocm
