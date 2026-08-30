@@ -46,47 +46,39 @@ def patch_rope(cuda_dir):
                 f.write(src)
             print(f"[patch_rocm] Patched {p}")
 
-def patch_norm(cuda_dir):
-    p = os.path.join(cuda_dir, "norm.cu")
-    if not os.path.exists(p):
-        return
-    with open(p, "r", encoding="utf-8") as f:
-        src = f.read()
-    
-    modified = False
-    if "rms_norm_mul_rope" in src and "pos_dev" not in src:
-        src = re.sub(
-            r'(\bconst\s+int32_t\s*\*\s*(\w+)\s*=\s*\(const\s+int32_t\s*\*\)\s*(\w+)->data;)',
-            r'\1\n    ggml_cuda_pool_alloc<int32_t> \2_dev(ctx.pool());\n    if (\3->buffer && ggml_backend_buffer_is_host(\3->buffer)) {\n        \2_dev.alloc(ggml_nelements(\3));\n        CUDA_CHECK(cudaMemcpyAsync(\2_dev.ptr, \3->data, ggml_nbytes(\3), cudaMemcpyHostToDevice, stream));\n        \2 = \2_dev.ptr;\n    }',
-            src
-        )
-        modified = True
+def patch_fusion_disable(cuda_dir):
+    # Disable unsafe RMS_NORM + ROPE / RMS_NORM_MUL_ROPE fusion in all ggml-cuda files
+    for fname in os.listdir(cuda_dir):
+        if not (fname.endswith(".cu") or fname.endswith(".cpp") or fname.endswith(".cuh")):
+            continue
+        p = os.path.join(cuda_dir, fname)
+        with open(p, "r", encoding="utf-8") as f:
+            src = f.read()
+        
+        modified = False
+        
+        # 1. Disable can_fuse pattern for RMS_NORM + ... + ROPE
+        pattern1 = r'(\bggml_cuda_can_fuse\s*\([^;]+GGML_OP_RMS_NORM[^;]+GGML_OP_ROPE[^;]+\))'
+        if re.search(pattern1, src):
+            src = re.sub(pattern1, r'(false /* disabled for ROCm host pointer safety */)', src)
+            modified = True
 
-    if modified:
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(src)
-        print(f"[patch_rocm] Patched {p}")
+        # 2. Disable can_fuse pattern for rms_norm_mul_rope
+        pattern2 = r'(\bggml_cuda_can_fuse_rms_norm_mul_rope\s*\([^)]+\))'
+        if re.search(pattern2, src):
+            src = re.sub(pattern2, r'(false)', src)
+            modified = True
 
-def patch_ggml_cuda(cuda_dir):
-    p = os.path.join(cuda_dir, "ggml-cuda.cu")
-    if not os.path.exists(p):
-        return
-    with open(p, "r", encoding="utf-8") as f:
-        src = f.read()
-    
-    modified = False
-    if "rms_norm_mul_rope" in src and "pos_dev" not in src:
-        src = re.sub(
-            r'(\bconst\s+int32_t\s*\*\s*(\w+)\s*=\s*\(const\s+int32_t\s*\*\)\s*(\w+)->data;)',
-            r'\1\n    ggml_cuda_pool_alloc<int32_t> \2_dev(ctx.pool());\n    if (\3->buffer && ggml_backend_buffer_is_host(\3->buffer)) {\n        \2_dev.alloc(ggml_nelements(\3));\n        CUDA_CHECK(cudaMemcpyAsync(\2_dev.ptr, \3->data, ggml_nbytes(\3), cudaMemcpyHostToDevice, stream));\n        \2 = \2_dev.ptr;\n    }',
-            src
-        )
-        modified = True
-    
-    if modified:
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(src)
-        print(f"[patch_rocm] Patched {p}")
+        # 3. Disable any "if (fused_rms_norm_mul_rope)" or similar check
+        pattern3 = r'(\bif\s*\(\s*ggml_cuda_can_fuse\s*\(\s*cgraph\s*,\s*i\s*,\s*\{\s*GGML_OP_RMS_NORM\s*,\s*GGML_OP_MUL\s*,\s*GGML_OP_ROPE\s*\}\s*,\s*\{\s*\}\s*\)\s*\))'
+        if re.search(pattern3, src):
+            src = re.sub(pattern3, r'if (false)', src)
+            modified = True
+
+        if modified:
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(src)
+            print(f"[patch_rocm] Disabled RMS_NORM+ROPE fusion in {fname}")
 
 def main():
     if len(sys.argv) < 2:
@@ -99,8 +91,7 @@ def main():
         sys.exit(0)
     patch_getrows(cuda_dir)
     patch_rope(cuda_dir)
-    patch_norm(cuda_dir)
-    patch_ggml_cuda(cuda_dir)
+    patch_fusion_disable(cuda_dir)
 
 if __name__ == "__main__":
     main()
