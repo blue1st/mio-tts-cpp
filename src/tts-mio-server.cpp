@@ -2649,10 +2649,14 @@ static bool warmup_worker_llm(server_state & st, std::string & err) {
         tok = 0;
     }
 
-    std::fprintf(stderr, "mio: warmup_worker_llm: starting warmup decode tok=%d n_vocab=%d\n", tok, n_vocab);
+    const int32_t n_warmup = 256;
+    std::vector<llama_token> warmup_tokens(n_warmup, tok);
+
+    std::fprintf(stderr, "mio: warmup_worker_llm: starting warmup decode tok=%d n_tokens=%d n_vocab=%d\n",
+                 tok, n_warmup, n_vocab);
 
     llama_memory_clear(llama_get_memory(st.llm_ctx), false);
-    llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(&tok, 1, 0, true);
+    llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(warmup_tokens.data(), n_warmup, 0, true);
     const int ret = llama_decode(st.llm_ctx, batch);
     llama_batch_free(batch);
     llama_memory_clear(llama_get_memory(st.llm_ctx), false);
