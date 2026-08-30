@@ -1193,7 +1193,7 @@ bool miocodec_decoder::decode_tokens(
     }
 
     auto adaln_apply = [&](ggml_tensor * x_norm, ggml_tensor * shift, ggml_tensor * scale) -> ggml_tensor * {
-        ggml_tensor * one_plus_scale = ggml_add1(ctx, scale, scalar_one);
+        ggml_tensor * one_plus_scale = ggml_add(ctx, scale, scalar_one);
         ggml_tensor * y = ggml_mul(ctx, x_norm, repeat_cuda_safe(ctx, one_plus_scale, x_norm));
         y = ggml_add(ctx, y, repeat_cuda_safe(ctx, shift, y));
         return y;
@@ -1349,7 +1349,7 @@ bool miocodec_decoder::decode_tokens(
 
         ggml_tensor * ax = ggml_mul(ctx, x_cl, repeat_cuda_safe(ctx, a, x_cl));
         ggml_tensor * sin2 = ggml_sqr(ctx, ggml_sin(ctx, ax));
-        ggml_tensor * denom = ggml_add1(ctx, b, scalar_eps);
+        ggml_tensor * denom = ggml_add(ctx, b, scalar_eps);
         ggml_tensor * scaled = ggml_div(ctx, sin2, repeat_cuda_safe(ctx, denom, sin2));
         return ggml_add(ctx, x_cl, scaled);
     };

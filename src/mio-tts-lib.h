@@ -212,6 +212,29 @@ namespace mio_tts_compat {
         set_check_tensors_helper(p, val, 0);
     }
 
+    // SFINAE getters (return -1 when the field does not exist)
+    template <typename T>
+    inline auto get_use_mmap_helper(const T & p, int) -> decltype((int) p.use_mmap) {
+        return (int) p.use_mmap;
+    }
+    template <typename T>
+    inline int get_use_mmap_helper(const T &, long) { return -1; }
+
+    inline int get_use_mmap(const llama_model_params & p) {
+        return get_use_mmap_helper(p, 0);
+    }
+
+    template <typename T>
+    inline auto get_check_tensors_helper(const T & p, int) -> decltype((int) p.check_tensors) {
+        return (int) p.check_tensors;
+    }
+    template <typename T>
+    inline int get_check_tensors_helper(const T &, long) { return -1; }
+
+    inline int get_check_tensors(const llama_model_params & p) {
+        return get_check_tensors_helper(p, 0);
+    }
+
     template <typename T>
     inline auto set_offload_kqv_helper(T & p, bool val, int) -> decltype((void) (p.offload_kqv = val)) {
         p.offload_kqv = val;

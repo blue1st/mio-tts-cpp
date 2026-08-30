@@ -2536,9 +2536,9 @@ static bool init_server_state(server_state & st, const server_config & cfg, std:
         mio_tts_compat::set_check_tensors(mparams, true);
         std::fprintf(stderr, "mio: loading LLM model: n_gpu_layers=%d, use_mmap=%d, vocab_only=%d, check_tensors=%d\n",
                      mparams.n_gpu_layers,
-                     (int) mparams.use_mmap,
+                     mio_tts_compat::get_use_mmap(mparams),
                      (int) mparams.vocab_only,
-                     (int) mparams.check_tensors);
+                     mio_tts_compat::get_check_tensors(mparams));
         st.llm = llama_model_load_from_file(cfg.model.c_str(), mparams);
         if (st.llm == nullptr) {
             err = std::string("failed to load model: ") + cfg.model;
