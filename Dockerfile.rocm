@@ -24,13 +24,14 @@ COPY . /app
 # 2. 依存する llama.cpp を配置 (b10689 でバージョン固定)
 RUN git clone --depth 1 --branch ${LLAMA_CPP_TAG} https://github.com/ggerganov/llama.cpp.git /app/llama.cpp
 
-# ビルド実行 (gfx1151 / Strix Point / Halo APU 等に対応)
+# ビルド実行 (gfx1151 / Strix Point / Halo APU 等に対応、不要な量子化FAテンプレート展開を抑制して高速化)
 RUN mkdir build && cd build && \
     CC=amdclang CXX=hipcc cmake .. \
       -DLLAMA_CPP_SOURCE_DIR=/app/llama.cpp \
       -DGGML_HIP=ON \
       -DAMDGPU_TARGETS=gfx1151 \
       -DGPU_TARGETS=gfx1151 \
+      -DGGML_CUDA_FA_ALL_QUANTS=OFF \
       -DCMAKE_BUILD_TYPE=Release && \
     cmake --build . --config Release -j$(nproc)
 
