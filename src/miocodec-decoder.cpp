@@ -1551,14 +1551,6 @@ bool miocodec_decoder::decode_tokens(
         backend_gpu_ = init_gpu_backend(backend_device_name_);
     }
     ggml_backend_t backend_gpu = backend_gpu_;
-    // Metal does not support GGML_OP_UPSCALE with BILINEAR mode
-    // (used by ggml_interpolate in the decode graph).  Skip GPU for Metal.
-    if (backend_gpu != nullptr) {
-        const char * bname = ggml_backend_name(backend_gpu);
-        if (bname != nullptr && std::strncmp(bname, "MTL", 3) == 0) {
-            backend_gpu = nullptr;
-        }
-    }
     log_backend_once("decode", backend_gpu);
     if (backend_gpu != nullptr) {
         set_backend_threads(backend_gpu, std::max(1, n_threads));

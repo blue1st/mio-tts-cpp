@@ -1,0 +1,60 @@
+ARG UBUNTU_VERSION=22.04
+FROM ubuntu:${UBUNTU_VERSION} AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ARG LLAMA_CPP_TAG=b10689
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    cmake \
+    build-essential \
+    libsndfile1-dev \
+    libvulkan-dev \
+    glslc \
+    spirv-headers \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 1. Copy mio-tts-cpp source
+COPY . /app
+
+# 2. Clone pinned llama.cpp
+RUN git clone --depth 1 --branch ${LLAMA_CPP_TAG} https://github.com/ggerganov/llama.cpp.git /app/llama.cpp
+
+# 3. Build mio-tts-server with Vulkan backend
+RUN mkdir build && cd build && \
+    cmake .. \
+      -DLLAMA_CPP_SOURCE_DIR=/app/llama.cpp \
+      -DGGML_VULKAN=ON \
+      -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build . --config Release -j$(nproc)
+
+# 4. Copy runtime artifacts
+RUN mkdir -p /app/dist/app/lib && \
+    cp /app/build/mio-tts-server /app/dist/app/ && \
+    find /app/build -name "*.so*" -exec cp -P {} /app/dist/app/lib/ \;
+
+# Runtime stage
+FROM ubuntu:${UBUNTU_VERSION}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LD_LIBRARY_PATH="/app/lib:${LD_LIBRARY_PATH:-}"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsndfile1 \
+    libgomp1 \
+    libvulkan1 \
+    mesa-vulkan-drivers \
+    vulkan-tools \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /app/dist/ /
+
+EXPOSE 18089
+
+ENTRYPOINT ["./mio-tts-server"]

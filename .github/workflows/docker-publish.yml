@@ -1,4 +1,4 @@
-name: Build and Publish ROCm Docker Image
+name: Build and Publish Docker Images
 
 on:
   push:
@@ -7,23 +7,38 @@ on:
     tags:
       - 'v*'
     paths:
-      - 'Dockerfile.rocm'
-      - 'docker-compose.rocm.yml'
+      - 'Dockerfile*'
+      - 'docker-compose*.yml'
       - '.dockerignore'
       - 'CMakeLists.txt'
       - 'src/**'
       - 'scripts/**'
-      - '.github/workflows/docker-rocm.yml'
+      - '.github/workflows/docker-publish.yml'
   workflow_dispatch:
-
-env:
-  UBUNTU_VERSION: "22.04"
-  ROCM_VERSION: "10.0.0"
-  ROCM_BASE_IMAGE: "10.0.0-full"
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: cpu
+            file: ./Dockerfile.cpu
+            tag_prefix: cpu
+          - name: cuda
+            file: ./Dockerfile.cuda
+            tag_prefix: cuda
+          - name: vulkan
+            file: ./Dockerfile.vulkan
+            tag_prefix: vulkan
+          - name: rocm
+            file: ./Dockerfile.rocm
+            tag_prefix: rocm
+            build_args: |
+              UBUNTU_VERSION=22.04
+              ROCM_VERSION=10.0.0-full
+
     permissions:
       contents: read
       packages: write
@@ -56,24 +71,20 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=rocm${{ env.ROCM_VERSION }}-latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=rocm${{ env.ROCM_VERSION }}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=rocm-latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=branch,prefix=rocm${{ env.ROCM_VERSION }}-
-            type=semver,pattern={{version}},prefix=rocm${{ env.ROCM_VERSION }}-
-            type=sha,prefix=rocm-,format=short
+            type=raw,value=${{ matrix.tag_prefix }}-latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ matrix.tag_prefix }}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=branch,prefix=${{ matrix.tag_prefix }}-
+            type=semver,pattern={{version}},prefix=${{ matrix.tag_prefix }}-
+            type=sha,prefix=${{ matrix.tag_prefix }}-,format=short
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile.rocm
+          file: ${{ matrix.file }}
           push: true
-          build-args: |
-            UBUNTU_VERSION=${{ env.UBUNTU_VERSION }}
-            ROCM_VERSION=${{ env.ROCM_BASE_IMAGE }}
+          build-args: ${{ matrix.build_args }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

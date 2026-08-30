@@ -30,9 +30,9 @@ mkdir -p "$TMP_DIR"
 
 # ---------- helpers ----------
 log_info()  { printf "${CYAN}[INFO]${NC}  %s\n" "$*"; }
-log_pass()  { printf "${GREEN}[PASS]${NC}  %s\n" "$*"; ((PASSED++)); }
-log_fail()  { printf "${RED}[FAIL]${NC}  %s\n" "$*"; ((FAILED++)); }
-log_skip()  { printf "${YELLOW}[SKIP]${NC}  %s\n" "$*"; ((SKIPPED++)); }
+log_pass()  { printf "${GREEN}[PASS]${NC}  %s\n" "$*"; PASSED=$((PASSED + 1)); }
+log_fail()  { printf "${RED}[FAIL]${NC}  %s\n" "$*"; FAILED=$((FAILED + 1)); }
+log_skip()  { printf "${YELLOW}[SKIP]${NC}  %s\n" "$*"; SKIPPED=$((SKIPPED + 1)); }
 
 check_file_exists() {
     local path="$1"

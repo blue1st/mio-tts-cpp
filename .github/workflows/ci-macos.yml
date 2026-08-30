@@ -1,0 +1,48 @@
+name: CI macOS Metal
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - 'build.sh'
+      - '.github/workflows/ci-macos.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - 'build.sh'
+      - '.github/workflows/ci-macos.yml'
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download models
+        run: |
+          chmod +x models_download.sh
+          ./models_download.sh
+
+      - name: Build with Metal
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Run CLI Test Suite
+        run: |
+          chmod +x tests/test_miotts-cli.sh
+          ./tests/test_miotts-cli.sh

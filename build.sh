@@ -71,6 +71,8 @@ LLAMA_CPP_SOURCE_DIR_REAL="$(resolve_path "${LLAMA_CPP_SOURCE_DIR}")"
 GGML_CUDA_OPT="${GGML_CUDA:-}"
 GGML_CUDA_NO_VMM_OPT="${GGML_CUDA_NO_VMM:-}"
 GGML_CUDA_GRAPHS_OPT="${GGML_CUDA_GRAPHS:-}"
+GGML_VULKAN_OPT="${GGML_VULKAN:-}"
+GGML_HIP_OPT="${GGML_HIP:-}"
 MAX_AUTO_JOBS_CUDA="${MAX_AUTO_JOBS_CUDA:-8}"
 MAX_AUTO_JOBS_CPU="${MAX_AUTO_JOBS_CPU:-16}"
 
@@ -83,6 +85,32 @@ if [[ -z "${GGML_CUDA_OPT}" ]]; then
       ;;
     0|off|false|no)
       GGML_CUDA_OPT="OFF"
+      ;;
+  esac
+fi
+
+if [[ -z "${GGML_VULKAN_OPT}" ]]; then
+  VULKAN_SWITCH="${VULKAN:-}"
+  VULKAN_SWITCH_LC="$(printf '%s' "${VULKAN_SWITCH}" | tr '[:upper:]' '[:lower:]')"
+  case "${VULKAN_SWITCH_LC}" in
+    1|on|true|yes)
+      GGML_VULKAN_OPT="ON"
+      ;;
+    0|off|false|no)
+      GGML_VULKAN_OPT="OFF"
+      ;;
+  esac
+fi
+
+if [[ -z "${GGML_HIP_OPT}" ]]; then
+  HIP_SWITCH="${HIP:-${ROCM:-}}"
+  HIP_SWITCH_LC="$(printf '%s' "${HIP_SWITCH}" | tr '[:upper:]' '[:lower:]')"
+  case "${HIP_SWITCH_LC}" in
+    1|on|true|yes)
+      GGML_HIP_OPT="ON"
+      ;;
+    0|off|false|no)
+      GGML_HIP_OPT="OFF"
       ;;
   esac
 fi
@@ -153,6 +181,12 @@ fi
 if [[ -n "${GGML_CUDA_GRAPHS_OPT}" ]]; then
   echo "  ggml_cuda_graphs: ${GGML_CUDA_GRAPHS_OPT}"
 fi
+if [[ -n "${GGML_VULKAN_OPT}" ]]; then
+  echo "  ggml_vulkan: ${GGML_VULKAN_OPT}"
+fi
+if [[ -n "${GGML_HIP_OPT}" ]]; then
+  echo "  ggml_hip : ${GGML_HIP_OPT}"
+fi
 echo "  jobs  : ${JOBS}"
 
 CMAKE_ARGS=(
@@ -167,6 +201,12 @@ if [[ -n "${GGML_CUDA_NO_VMM_OPT}" ]]; then
 fi
 if [[ -n "${GGML_CUDA_GRAPHS_OPT}" ]]; then
   CMAKE_ARGS+=(-DGGML_CUDA_GRAPHS="${GGML_CUDA_GRAPHS_OPT}")
+fi
+if [[ -n "${GGML_VULKAN_OPT}" ]]; then
+  CMAKE_ARGS+=(-DGGML_VULKAN="${GGML_VULKAN_OPT}")
+fi
+if [[ -n "${GGML_HIP_OPT}" ]]; then
+  CMAKE_ARGS+=(-DGGML_HIP="${GGML_HIP_OPT}")
 fi
 
 cmake -S "${SCRIPT_DIR}" \

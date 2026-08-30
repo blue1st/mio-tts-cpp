@@ -1,0 +1,27 @@
+services:
+  mio-tts:
+    image: ghcr.io/blue1st/mio-tts-cpp:cpu-latest
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    container_name: mio-tts-cpp-cpu
+    ports:
+      - "18089:18089"
+    volumes:
+      - ./models:/app/models
+      - ./output:/tmp
+    command: [
+      "-mv", "models/miocodec.gguf",
+      "-m", "models/MioTTS-0.1B-Q8_0.gguf",
+      "--tts-wavlm-model", "models/wavlm_base_plus_2l_f32.gguf",
+      "--reference-file-json", '[{"key":"jp_female","path":"models/jp_female.emb.gguf"},{"key":"jp_male","path":"models/jp_male.emb.gguf"}]',
+      "--host", "0.0.0.0",
+      "--port", "18089",
+      "-ngl", "0",
+      "--ctx-size", "700",
+      "-n", "400",
+      "--parallel", "1",
+      "--threads", "4",
+      "--output-dir", "/tmp"
+    ]
+    restart: unless-stopped

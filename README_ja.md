@@ -87,9 +87,46 @@ git submodule update --init
 `build.sh` は以下の環境変数に対応しています:
 
 ```bash
-GGML_CUDA=ON ./build.sh          # CUDA 有効化
+# macOS (Apple Silicon Metal) の場合はデフォルトで Metal が有効化されます
+./build.sh                       # Metal (macOS) / CPU (Linux)
+
+GGML_CUDA=ON ./build.sh          # CUDA (NVIDIA) 有効化
+GGML_VULKAN=ON ./build.sh        # Vulkan 有効化
+GGML_HIP=ON ./build.sh           # ROCm / HIP (AMD) 有効化
 BUILD_TYPE=Debug ./build.sh       # デバッグビルド
 JOBS=8 ./build.sh                 # 並列ジョブ数
+```
+
+## Docker による実行
+
+各バックエンド向けの Dockerfile および Docker Compose を提供しています。
+
+| バックエンド | Dockerfile | Compose ファイル | 特徴 / ハードウェア |
+|---|---|---|---|
+| **CPU** | `Dockerfile.cpu` | `docker-compose.cpu.yml` | 汎用（GPU 不要・x86_64 / arm64） |
+| **CUDA** | `Dockerfile.cuda` | `docker-compose.cuda.yml` | NVIDIA GPU (NVIDIA Container Toolkit) |
+| **Vulkan** | `Dockerfile.vulkan` | `docker-compose.vulkan.yml` | 汎用 GPU (AMD / Intel / NVIDIA, `/dev/dri`) |
+| **ROCm** | `Dockerfile.rocm` | `docker-compose.rocm.yml` | AMD GPU / APU (Radeon / Ryzen APU) |
+
+> [!NOTE]
+> Apple Metal は macOS 専用 API のため、Mac では Docker ではなくホスト上でネイティブ実行（`./build.sh`）してください。
+
+### Docker Compose での起動例
+
+事前に `./models_download.sh` 等で `models/` ディレクトリにモデルを配置しておきます。
+
+```bash
+# CPU 版
+docker compose -f docker-compose.cpu.yml up -d
+
+# NVIDIA CUDA 版
+docker compose -f docker-compose.cuda.yml up -d
+
+# Vulkan 版
+docker compose -f docker-compose.vulkan.yml up -d
+
+# AMD ROCm 版
+docker compose -f docker-compose.rocm.yml up -d
 ```
 
 ## 使い方

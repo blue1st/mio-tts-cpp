@@ -85,9 +85,46 @@ Outputs:
 `build.sh` respects the following environment variables:
 
 ```bash
-GGML_CUDA=ON ./build.sh          # Enable CUDA
+# On macOS (Apple Silicon), Metal is enabled automatically by default
+./build.sh                       # Metal (macOS) / CPU (Linux)
+
+GGML_CUDA=ON ./build.sh          # Enable CUDA (NVIDIA)
+GGML_VULKAN=ON ./build.sh        # Enable Vulkan
+GGML_HIP=ON ./build.sh           # Enable ROCm / HIP (AMD)
 BUILD_TYPE=Debug ./build.sh       # Debug build
 JOBS=8 ./build.sh                 # Parallel jobs
+```
+
+## Docker Support
+
+Dockerfiles and Docker Compose files are provided for various acceleration backends:
+
+| Backend | Dockerfile | Compose File | Target Hardware |
+|---|---|---|---|
+| **CPU** | `Dockerfile.cpu` | `docker-compose.cpu.yml` | General purpose (no GPU required, x86_64 / arm64) |
+| **CUDA** | `Dockerfile.cuda` | `docker-compose.cuda.yml` | NVIDIA GPU (NVIDIA Container Toolkit) |
+| **Vulkan** | `Dockerfile.vulkan` | `docker-compose.vulkan.yml` | Cross-vendor GPU (AMD / Intel / NVIDIA, `/dev/dri`) |
+| **ROCm** | `Dockerfile.rocm` | `docker-compose.rocm.yml` | AMD GPU / APU (Radeon / Ryzen APU) |
+
+> [!NOTE]
+> Apple Metal is macOS-exclusive and not accessible inside Linux Docker containers. On Apple Silicon Macs, please build and run natively with `./build.sh`.
+
+### Running with Docker Compose
+
+Ensure models are downloaded to the `models/` directory first (e.g. via `./models_download.sh`).
+
+```bash
+# CPU
+docker compose -f docker-compose.cpu.yml up -d
+
+# NVIDIA CUDA
+docker compose -f docker-compose.cuda.yml up -d
+
+# Vulkan
+docker compose -f docker-compose.vulkan.yml up -d
+
+# AMD ROCm
+docker compose -f docker-compose.rocm.yml up -d
 ```
 
 ## Usage

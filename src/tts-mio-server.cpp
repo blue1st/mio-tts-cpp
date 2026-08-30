@@ -952,7 +952,6 @@ static std::vector<std::string> detect_gpu_backend_names() {
     std::vector<std::string> out;
     const size_t n_dev = ggml_backend_dev_count();
     out.reserve(n_dev);
-    int32_t skipped_metal = 0;
     for (size_t i = 0; i < n_dev; ++i) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(i);
         if (dev == nullptr) {
@@ -964,22 +963,8 @@ static std::vector<std::string> detect_gpu_backend_names() {
         }
         const char * name = ggml_backend_dev_name(dev);
         if (name != nullptr && name[0] != '\0') {
-            // ggml-metal does not currently support the UPSCALE op used by MioCodec
-            // wave upsampler paths. Avoid selecting MTL* automatically to prevent
-            // hard aborts in synthesis workers on Apple platforms.
-            if (std::strncmp(name, "MTL", 3) == 0) {
-                ++skipped_metal;
-                continue;
-            }
             out.emplace_back(name);
         }
-    }
-    if (skipped_metal > 0) {
-        std::fprintf(stderr,
-                "info: skipped %d Metal backend(s) for mio runtime auto-selection "
-                "(unsupported UPSCALE op); falling back to CPU unless "
-                "--mio-backend-devices is specified\n",
-                skipped_metal);
     }
     return out;
 }
