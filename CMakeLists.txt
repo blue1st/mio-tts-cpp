@@ -29,6 +29,22 @@ else()
     set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 endif()
 
+# Auto-patch llama.cpp getrows.cu for ROCm APU host-pointer safety if needed
+set(GETROWS_CU "${LLAMA_CPP_SOURCE_DIR}/ggml/src/ggml-cuda/getrows.cu")
+if(EXISTS "${GETROWS_CU}")
+    file(READ "${GETROWS_CU}" GETROWS_SRC)
+    if(NOT "${GETROWS_SRC}" MATCHES "src1_dev")
+        string(REPLACE
+            "get_rows_cuda(src0->data, src0->type, (const int32_t *) src1->data, dst->data, dst->type,"
+            "const int32_t * src1_d = (const int32_t *) src1->data;\n    ggml_cuda_pool_alloc<int32_t> src1_dev(ctx.pool());\n    if (src1->buffer && ggml_backend_buffer_is_host(src1->buffer)) {\n        src1_dev.alloc(ggml_nelements(src1));\n        CUDA_CHECK(cudaMemcpyAsync(src1_dev.ptr, src1->data, ggml_nbytes(src1), cudaMemcpyHostToDevice, stream));\n        src1_d = src1_dev.ptr;\n    }\n    get_rows_cuda(src0->data, src0->type, src1_d, dst->data, dst->type,"
+            GETROWS_PATCHED
+            "${GETROWS_SRC}"
+        )
+        file(WRITE "${GETROWS_CU}" "${GETROWS_PATCHED}")
+        message(STATUS "Patched ${GETROWS_CU} for ROCm APU host pointer safety")
+    endif()
+endif()
+
 add_subdirectory(${LLAMA_CPP_SOURCE_DIR} ${CMAKE_BINARY_DIR}/llama_cpp EXCLUDE_FROM_ALL)
 
 if(NOT TARGET cpp-httplib)
