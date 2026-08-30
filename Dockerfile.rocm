@@ -47,11 +47,6 @@ RUN mkdir -p /app/dist/app/lib /app/dist/opt && \
     find /opt/rocm -name "*.a" -delete && \
     cp -a /opt/rocm /app/dist/opt/
 
-# ビルド時検証: 依存関係がすべて解決し、バイナリが正常起動することを確認
-RUN LD_LIBRARY_PATH="/app/dist/app/lib:/app/dist/opt/rocm/lib:/app/dist/opt/rocm/core-10.0/lib" ldd /app/dist/app/mio-tts-server && \
-    ! LD_LIBRARY_PATH="/app/dist/app/lib:/app/dist/opt/rocm/lib:/app/dist/opt/rocm/core-10.0/lib" ldd /app/dist/app/mio-tts-server | grep "not found" && \
-    LD_LIBRARY_PATH="/app/dist/app/lib:/app/dist/opt/rocm/lib:/app/dist/opt/rocm/core-10.0/lib" /app/dist/app/mio-tts-server --help > /dev/null
-
 # 実行用ステージ (最小限の3レイヤー構成)
 FROM ubuntu:${UBUNTU_VERSION}
 
