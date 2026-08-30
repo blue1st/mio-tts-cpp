@@ -129,19 +129,51 @@ def patch_fusions(cuda_dir):
         
         modified = False
         
-        # In should_fuse_rope_set_rows, check host buffer
         target1 = "static bool ggml_cuda_should_fuse_rope_set_rows(const ggml_tensor * rope,\n                                                const ggml_tensor * view,\n                                                const ggml_tensor * set_rows) {\n\n    if (rope->op != GGML_OP_ROPE || view->op != GGML_OP_VIEW || set_rows->op != GGML_OP_SET_ROWS) {\n        return false;\n    }"
         repl1 = target1 + "\n\n    if (set_rows->src[1]->buffer && ggml_backend_buffer_is_host(set_rows->src[1]->buffer)) {\n        return false;\n    }"
         if target1 in src and "ggml_backend_buffer_is_host(set_rows->src[1]->buffer)" not in src:
             src = src.replace(target1, repl1, 1)
             modified = True
 
-        # In any other should_fuse with set_rows
-        # If any function has should_fuse...set_rows, disallow host buffer
         if modified:
             with open(p, "w", encoding="utf-8") as f:
                 f.write(src)
             print(f"[patch_rocm] Patched fusions in {p}")
+
+def patch_flash_attn(cuda_dir):
+    p = os.path.join(cuda_dir, "fattn-common.cuh")
+    if not os.path.exists(p):
+        return
+    with open(p, "r", encoding="utf-8") as f:
+        src = f.read()
+    
+    if "mask_dev" not in src:
+        target_alloc = "ggml_cuda_pool_alloc<float2> dst_tmp_meta(pool);"
+        repl_alloc = """ggml_cuda_pool_alloc<float2> dst_tmp_meta(pool);
+    ggml_cuda_pool_alloc<char>   mask_dev(pool);
+    ggml_cuda_pool_alloc<char>   sinks_dev(pool);
+
+    const char * mask_data = mask ? ((const char *) mask->data) : nullptr;
+    if (mask && mask->buffer && ggml_backend_buffer_is_host(mask->buffer)) {
+        mask_dev.alloc(ggml_nbytes(mask));
+        CUDA_CHECK(cudaMemcpyAsync(mask_dev.ptr, mask->data, ggml_nbytes(mask), cudaMemcpyHostToDevice, main_stream));
+        mask_data = mask_dev.ptr;
+    }
+
+    const char * sinks_data = sinks ? ((const char *) sinks->data) : nullptr;
+    if (sinks && sinks->buffer && ggml_backend_buffer_is_host(sinks->buffer)) {
+        sinks_dev.alloc(ggml_nbytes(sinks));
+        CUDA_CHECK(cudaMemcpyAsync(sinks_dev.ptr, sinks->data, ggml_nbytes(sinks), cudaMemcpyHostToDevice, main_stream));
+        sinks_data = sinks_dev.ptr;
+    }"""
+        if target_alloc in src:
+            src = src.replace(target_alloc, repl_alloc, 1)
+            src = src.replace("((const half2 *) mask->data, KV_max.ptr", "((const half2 *) mask_data, KV_max.ptr")
+            src = src.replace("mask ? ((const char *) mask->data) : nullptr,", "mask_data,")
+            src = src.replace("sinks ? ((const char *) sinks->data) : nullptr,", "sinks_data,")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(src)
+            print(f"[patch_rocm] Patched flash attention in {p}")
 
 def main():
     if len(sys.argv) < 2:
@@ -156,6 +188,7 @@ def main():
         patch_set_rows(cuda_dir)
         patch_rope(cuda_dir)
         patch_fusions(cuda_dir)
+        patch_flash_attn(cuda_dir)
 
 if __name__ == "__main__":
     main()
