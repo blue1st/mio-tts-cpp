@@ -3,6 +3,26 @@ import os
 import sys
 import re
 
+def patch_backend(llama_dir):
+    # Patch ggml-backend.cpp to place input tensors (pos, tokens, KQ_mask, etc.) on GPU VRAM (backend 0)
+    # when op_offload is enabled, except out_ids which expects host buffer.
+    candidates = [
+        os.path.join(llama_dir, "ggml", "src", "ggml-backend.cpp"),
+        os.path.join(llama_dir, "src", "ggml-backend.cpp"),
+    ]
+    for p in candidates:
+        if not os.path.exists(p):
+            continue
+        with open(p, "r", encoding="utf-8") as f:
+            src = f.read()
+        target = 'cur_backend_id = sched->n_backends - 1; // last backend (assumed CPU)'
+        repl = 'cur_backend_id = (sched->n_backends > 1 && sched->op_offload && strcmp(tensor->name, "out_ids") != 0) ? 0 : (sched->n_backends - 1);'
+        if target in src:
+            src = src.replace(target, repl, 1)
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(src)
+            print(f"[patch_rocm] Patched input tensor placement in {p}")
+
 def patch_getrows(cuda_dir):
     p = os.path.join(cuda_dir, "getrows.cu")
     if not os.path.exists(p):
@@ -105,13 +125,12 @@ def main():
         print("Usage: patch_rocm_safety.py <llama_cpp_source_dir>")
         sys.exit(1)
     llama_dir = sys.argv[1]
+    patch_backend(llama_dir)
     cuda_dir = os.path.join(llama_dir, "ggml", "src", "ggml-cuda")
-    if not os.path.isdir(cuda_dir):
-        print(f"Directory not found: {cuda_dir}")
-        sys.exit(0)
-    patch_getrows(cuda_dir)
-    patch_rope(cuda_dir)
-    patch_set_rows(cuda_dir)
+    if os.path.isdir(cuda_dir):
+        patch_getrows(cuda_dir)
+        patch_rope(cuda_dir)
+        patch_set_rows(cuda_dir)
 
 if __name__ == "__main__":
     main()
