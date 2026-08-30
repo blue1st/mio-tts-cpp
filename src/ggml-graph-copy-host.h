@@ -155,10 +155,12 @@ static inline bool init_tensor_recursive(
         if (!init_tensor_recursive(src->view_src, map, initialized, err)) {
             return false;
         }
-        const ggml_status st = ggml_backend_view_init(dst);
-        if (st != GGML_STATUS_SUCCESS) {
-            err = "ggml_backend_view_init failed";
-            return false;
+        if (dst->view_src != nullptr && dst->view_src->buffer != nullptr) {
+            const ggml_status st = ggml_backend_view_init(dst);
+            if (st != GGML_STATUS_SUCCESS) {
+                err = "ggml_backend_view_init failed";
+                return false;
+            }
         }
     } else if (src->op == GGML_OP_NONE && src->data != nullptr) {
         const size_t nbytes = ggml_nbytes(src);
