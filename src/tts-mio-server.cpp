@@ -2532,8 +2532,14 @@ static bool init_server_state(server_state & st, const server_config & cfg, std:
         llama_model_params mparams = llama_model_default_params();
         mparams.n_gpu_layers = cfg.n_gpu_layers;
         mparams.vocab_only = false;
-        mio_tts_compat::set_use_mmap(mparams, false);
-        mio_tts_compat::set_check_tensors(mparams, true);
+        std::vector<llama_model_tensor_buft_override> buft_overrides;
+        ggml_backend_buffer_type_t gpu_buft = mio_tts_compat::get_default_gpu_buft();
+        if (gpu_buft != nullptr && cfg.n_gpu_layers != 0) {
+            buft_overrides.push_back({"token_embd.*", gpu_buft});
+            buft_overrides.push_back({nullptr, nullptr});
+            mio_tts_compat::set_tensor_buft_overrides(mparams, buft_overrides.data());
+            std::fprintf(stderr, "mio: overriding token_embd buffer to GPU: %s\n", ggml_backend_buft_name(gpu_buft));
+        }
 
         std::fprintf(stderr, "mio: loading LLM model: n_gpu_layers=%d, use_mmap=%d, vocab_only=%d, check_tensors=%d\n",
                      mparams.n_gpu_layers,
@@ -2612,7 +2618,7 @@ static bool init_worker_llm_context(server_state & st, std::string & err) {
     cparams.n_threads_batch = cparams.n_threads;
     mio_tts_compat::set_offload_kqv(cparams, true);
     mio_tts_compat::set_no_perf(cparams, true);
-    mio_tts_compat::set_op_offload(cparams, false);
+    mio_tts_compat::set_op_offload(cparams, true);
 
     st.llm_ctx = llama_init_from_model(st.llm, cparams);
     if (st.llm_ctx == nullptr) {
