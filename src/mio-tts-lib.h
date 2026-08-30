@@ -268,6 +268,29 @@ namespace mio_tts_compat {
         set_op_offload_helper(p, val, 0);
     }
 
+    template <typename T>
+    inline auto set_tensor_buft_overrides_helper(T & p, const llama_model_tensor_buft_override * val, int)
+        -> decltype((void) (p.tensor_buft_overrides = val)) {
+        p.tensor_buft_overrides = val;
+    }
+    template <typename T>
+    inline void set_tensor_buft_overrides_helper(T &, const llama_model_tensor_buft_override *, long) {}
+
+    inline void set_tensor_buft_overrides(llama_model_params & p, const llama_model_tensor_buft_override * val) {
+        set_tensor_buft_overrides_helper(p, val, 0);
+    }
+
+    inline ggml_backend_buffer_type_t get_default_gpu_buft() {
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            const auto type = ggml_backend_dev_type(dev);
+            if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+                return ggml_backend_dev_buffer_type(dev);
+            }
+        }
+        return nullptr;
+    }
+
     inline struct llama_batch make_llama_batch_with_pos(
             const llama_token * tokens,
             int32_t n_tokens,

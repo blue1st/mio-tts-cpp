@@ -1216,6 +1216,14 @@ int main(int argc, char ** argv) {
                 mio_tts_compat::set_use_mmap(mparams, false);
                 mio_tts_compat::set_check_tensors(mparams, true);
 
+                std::vector<llama_model_tensor_buft_override> buft_overrides;
+                ggml_backend_buffer_type_t gpu_buft = mio_tts_compat::get_default_gpu_buft();
+                if (gpu_buft != nullptr && p.n_gpu_layers != 0) {
+                    buft_overrides.push_back({"token_embd.*", gpu_buft});
+                    buft_overrides.push_back({nullptr, nullptr});
+                    mio_tts_compat::set_tensor_buft_overrides(mparams, buft_overrides.data());
+                }
+
                 llama_model * model = llama_model_load_from_file(p.model.c_str(), mparams);
                 if (model == nullptr) {
                     std::fprintf(stderr, "failed to load LLM model: %s\n", p.model.c_str());
