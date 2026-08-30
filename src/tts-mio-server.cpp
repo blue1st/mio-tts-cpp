@@ -1417,14 +1417,23 @@ static bool tokenize_text(
     }
 
     out_tokens.resize((size_t) got);
+    const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+    if (n_vocab > 0) {
+        for (auto & t : out_tokens) {
+            if (t < 0 || t >= n_vocab) {
+                t = 0;
+            }
+        }
+    }
     return !out_tokens.empty();
 }
 
-static llama_sampler * make_sampler(const request_params & p) {
+static llama_sampler * make_sampler(const request_params & p, const llama_vocab * vocab = nullptr) {
     auto sparams = llama_sampler_chain_default_params();
     llama_sampler * smpl = llama_sampler_chain_init(sparams);
 
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, p.repeat_penalty, 0.0f, 0.0f));
+    const int32_t n_vocab = vocab != nullptr ? llama_vocab_n_tokens(vocab) : 0;
+    llama_sampler_chain_add(smpl, mio_tts_compat::compat_llama_sampler_init_penalties(n_vocab, 64, p.repeat_penalty, 0.0f, 0.0f));
     if (p.top_k > 0) {
         llama_sampler_chain_add(smpl, llama_sampler_init_top_k(p.top_k));
     }
@@ -1491,21 +1500,40 @@ static bool generate_audio_tokens(
 
     const int32_t n_batch = std::max<int32_t>(1, (int32_t) llama_n_batch(ctx));
 
-    llama_sampler * sampler = make_sampler(p);
+    llama_sampler * sampler = make_sampler(p, vocab);
 
     generated.clear();
+    {
+        int32_t tok_min = prompt_tokens.empty() ? 0 : prompt_tokens[0];
+        int32_t tok_max = tok_min;
+        for (auto t : prompt_tokens) {
+            if (t < tok_min) tok_min = t;
+            if (t > tok_max) tok_max = t;
+        }
+        std::fprintf(stderr, "mio: llm decode: prompt_len=%zu n_batch=%d n_vocab=%d tok_range=[%d, %d]\n",
+                     prompt_tokens.size(), n_batch,
+                     llama_vocab_n_tokens(vocab), tok_min, tok_max);
+    }
     for (int32_t pos = 0; pos < (int32_t) prompt_tokens.size(); pos += n_batch) {
         const int32_t n_chunk = std::min<int32_t>(n_batch, (int32_t) prompt_tokens.size() - pos);
-        llama_batch batch = llama_batch_get_one(prompt_tokens.data() + pos, n_chunk);
-        if (llama_decode(ctx, batch) != 0) {
+        const bool is_last_chunk = (pos + n_chunk == (int32_t) prompt_tokens.size());
+        llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(prompt_tokens.data() + pos, n_chunk, pos, is_last_chunk);
+        const int ret = llama_decode(ctx, batch);
+        llama_batch_free(batch);
+        if (ret != 0) {
             llama_sampler_free(sampler);
             err = "llama_decode failed on prompt";
             return false;
         }
     }
 
+    const int32_t n_vocab_len = llama_vocab_n_tokens(vocab);
+    int32_t curr_pos = (int32_t) prompt_tokens.size();
     for (int32_t i = 0; i < p.n_predict; ++i) {
         llama_token tok = llama_sampler_sample(sampler, ctx, -1);
+        if (tok < 0 || (n_vocab_len > 0 && tok >= n_vocab_len)) {
+            break;
+        }
         llama_sampler_accept(sampler, tok);
         generated.push_back(tok);
 
@@ -1513,8 +1541,10 @@ static bool generate_audio_tokens(
             break;
         }
 
-        llama_batch batch = llama_batch_get_one(&tok, 1);
-        if (llama_decode(ctx, batch) != 0) {
+        llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(&tok, 1, curr_pos++, true);
+        const int ret = llama_decode(ctx, batch);
+        llama_batch_free(batch);
+        if (ret != 0) {
             llama_sampler_free(sampler);
             err = "llama_decode failed during generation";
             return false;
@@ -1579,21 +1609,29 @@ static bool generate_audio_tokens_streaming(
 
     const int32_t n_batch = std::max<int32_t>(1, (int32_t) llama_n_batch(ctx));
 
-    llama_sampler * sampler = make_sampler(p);
+    llama_sampler * sampler = make_sampler(p, vocab);
 
     generated.clear();
     for (int32_t pos = 0; pos < (int32_t) prompt_tokens.size(); pos += n_batch) {
         const int32_t n_chunk = std::min<int32_t>(n_batch, (int32_t) prompt_tokens.size() - pos);
-        llama_batch batch = llama_batch_get_one(prompt_tokens.data() + pos, n_chunk);
-        if (llama_decode(ctx, batch) != 0) {
+        const bool is_last_chunk = (pos + n_chunk == (int32_t) prompt_tokens.size());
+        llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(prompt_tokens.data() + pos, n_chunk, pos, is_last_chunk);
+        const int ret = llama_decode(ctx, batch);
+        llama_batch_free(batch);
+        if (ret != 0) {
             llama_sampler_free(sampler);
             err = "llama_decode failed on prompt";
             return false;
         }
     }
 
+    const int32_t n_vocab_len_stream = llama_vocab_n_tokens(vocab);
+    int32_t curr_pos_stream = (int32_t) prompt_tokens.size();
     for (int32_t i = 0; i < p.n_predict; ++i) {
         llama_token tok = llama_sampler_sample(sampler, ctx, -1);
+        if (tok < 0 || (n_vocab_len_stream > 0 && tok >= n_vocab_len_stream)) {
+            break;
+        }
         llama_sampler_accept(sampler, tok);
         generated.push_back(tok);
 
@@ -1609,8 +1647,10 @@ static bool generate_audio_tokens_streaming(
             break;
         }
 
-        llama_batch batch = llama_batch_get_one(&tok, 1);
-        if (llama_decode(ctx, batch) != 0) {
+        llama_batch batch = mio_tts_compat::make_llama_batch_with_pos(&tok, 1, curr_pos_stream++, true);
+        const int ret = llama_decode(ctx, batch);
+        llama_batch_free(batch);
+        if (ret != 0) {
             llama_sampler_free(sampler);
             err = "llama_decode failed during generation";
             return false;
@@ -2491,7 +2531,21 @@ static bool init_server_state(server_state & st, const server_config & cfg, std:
     if (!cfg.model.empty()) {
         llama_model_params mparams = llama_model_default_params();
         mparams.n_gpu_layers = cfg.n_gpu_layers;
-        mparams.use_mmap = true;
+        mparams.vocab_only = false;
+        std::vector<llama_model_tensor_buft_override> buft_overrides;
+        ggml_backend_buffer_type_t gpu_buft = mio_tts_compat::get_default_gpu_buft();
+        if (gpu_buft != nullptr && cfg.n_gpu_layers != 0) {
+            buft_overrides.push_back({"token_embd.*", gpu_buft});
+            buft_overrides.push_back({nullptr, nullptr});
+            mio_tts_compat::set_tensor_buft_overrides(mparams, buft_overrides.data());
+            std::fprintf(stderr, "mio: overriding token_embd buffer to GPU: %s\n", ggml_backend_buft_name(gpu_buft));
+        }
+
+        std::fprintf(stderr, "mio: loading LLM model: n_gpu_layers=%d, use_mmap=%d, vocab_only=%d, check_tensors=%d\n",
+                     mparams.n_gpu_layers,
+                     mio_tts_compat::get_use_mmap(mparams),
+                     (int) mparams.vocab_only,
+                     mio_tts_compat::get_check_tensors(mparams));
         st.llm = llama_model_load_from_file(cfg.model.c_str(), mparams);
         if (st.llm == nullptr) {
             err = std::string("failed to load model: ") + cfg.model;
@@ -2562,7 +2616,9 @@ static bool init_worker_llm_context(server_state & st, std::string & err) {
     cparams.flash_attn_type = st.cfg.flash_attn_type;
     cparams.n_threads = resolve_threads(st.cfg.n_threads);
     cparams.n_threads_batch = cparams.n_threads;
-    cparams.no_perf = true;
+    mio_tts_compat::set_offload_kqv(cparams, true);
+    mio_tts_compat::set_no_perf(cparams, true);
+    mio_tts_compat::set_op_offload(cparams, true);
 
     st.llm_ctx = llama_init_from_model(st.llm, cparams);
     if (st.llm_ctx == nullptr) {
@@ -2573,29 +2629,7 @@ static bool init_worker_llm_context(server_state & st, std::string & err) {
     return true;
 }
 
-static bool warmup_worker_llm(server_state & st, std::string & err) {
-    if (st.llm_ctx == nullptr || st.vocab == nullptr) {
-        return true;
-    }
-    if (st.llm_warmed) {
-        return true;
-    }
-
-    llama_token tok = llama_vocab_bos(st.vocab);
-    if (tok < 0) {
-        tok = llama_vocab_eos(st.vocab);
-    }
-    if (tok < 0) {
-        tok = 0;
-    }
-
-    llama_memory_clear(llama_get_memory(st.llm_ctx), false);
-    llama_batch batch = llama_batch_get_one(&tok, 1);
-    if (llama_decode(st.llm_ctx, batch) != 0) {
-        err = "llm warmup decode failed";
-        return false;
-    }
-    llama_memory_clear(llama_get_memory(st.llm_ctx), false);
+static bool warmup_worker_llm(server_state & st, std::string & /*err*/) {
     st.llm_warmed = true;
     return true;
 }

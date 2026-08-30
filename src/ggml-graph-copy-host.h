@@ -14,6 +14,7 @@
 
 struct mio_ggml_graph_copy {
     ggml_backend_buffer_t buffer = nullptr;
+    ggml_gallocr_t galloc = nullptr;
     ggml_context * ctx_allocated = nullptr;
     ggml_context * ctx_unallocated = nullptr;
     ggml_cgraph * graph = nullptr;
@@ -21,6 +22,10 @@ struct mio_ggml_graph_copy {
 };
 
 static inline void mio_ggml_graph_copy_free(mio_ggml_graph_copy & copy) {
+    if (copy.galloc != nullptr) {
+        ggml_gallocr_free(copy.galloc);
+        copy.galloc = nullptr;
+    }
     if (copy.buffer != nullptr) {
         ggml_backend_buffer_free(copy.buffer);
         copy.buffer = nullptr;
@@ -81,11 +86,17 @@ static inline ggml_tensor * dup_tensor_recursive(
         return it->second;
     }
 
-    ggml_context * ctx_target = (src->data != nullptr && src->view_src == nullptr) ? ctx_allocated : ctx_unallocated;
+    // Persistent leaf tensors (weights/inputs/constants with op == GGML_OP_NONE and no view_src)
+    // are placed in ctx_allocated so ggml_backend_alloc_ctx_tensors allocates persistent GPU buffer.
+    // Intermediate compute nodes (op != GGML_OP_NONE) go to ctx_unallocated and are allocated via backend gallocr.
+    const bool is_persistent_leaf = (src->op == GGML_OP_NONE && src->view_src == nullptr);
+    ggml_context * ctx_target = is_persistent_leaf ? ctx_allocated : ctx_unallocated;
     ggml_tensor * dst = ggml_dup_tensor(ctx_target, src);
     if (dst == nullptr) {
         return nullptr;
     }
+    dst->data = nullptr;
+    dst->buffer = nullptr;
 
     // Keep original tensor layout (not only shape).
     // Some graph nodes (e.g. permute/reshape views) rely on non-default nb[].
@@ -144,12 +155,14 @@ static inline bool init_tensor_recursive(
         if (!init_tensor_recursive(src->view_src, map, initialized, err)) {
             return false;
         }
-        const ggml_status st = ggml_backend_view_init(dst);
-        if (st != GGML_STATUS_SUCCESS) {
-            err = "ggml_backend_view_init failed";
-            return false;
+        if (dst->view_src != nullptr && dst->view_src->buffer != nullptr) {
+            const ggml_status st = ggml_backend_view_init(dst);
+            if (st != GGML_STATUS_SUCCESS) {
+                err = "ggml_backend_view_init failed";
+                return false;
+            }
         }
-    } else if (src->data != nullptr) {
+    } else if (src->op == GGML_OP_NONE && src->data != nullptr) {
         const size_t nbytes = ggml_nbytes(src);
         if (nbytes > 0) {
             if (src->buffer != nullptr) {
@@ -260,6 +273,13 @@ static inline bool mio_ggml_backend_graph_copy_from_host(
             return false;
         }
         ggml_graph_add_node(out.graph, it->second);
+    }
+
+    out.galloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+    if (out.galloc == nullptr || !ggml_gallocr_alloc_graph(out.galloc, out.graph)) {
+        err = "failed to allocate backend gallocr memory for graph nodes";
+        mio_ggml_graph_copy_free(out);
+        return false;
     }
 
     out.tensor_by_name.clear();

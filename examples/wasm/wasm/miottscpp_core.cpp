@@ -122,10 +122,11 @@ static bool tokenize_text(
     return !out_tokens.empty();
 }
 
-static llama_sampler * make_sampler(int top_k, float top_p, float temp) {
+static llama_sampler * make_sampler(int top_k, float top_p, float temp, const llama_vocab * vocab = nullptr) {
     auto sparams = llama_sampler_chain_default_params();
     llama_sampler * smpl = llama_sampler_chain_init(sparams);
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(64, 1.0f, 0.0f, 0.0f));
+    const int32_t n_vocab = vocab != nullptr ? llama_vocab_n_tokens(vocab) : 0;
+    llama_sampler_chain_add(smpl, mio_tts_compat::compat_llama_sampler_init_penalties(n_vocab, 64, 1.0f, 0.0f, 0.0f));
 
     if (top_k > 0) {
         llama_sampler_chain_add(smpl, llama_sampler_init_top_k(top_k));
@@ -190,8 +191,10 @@ public:
 
             llama_model_params mparams = llama_model_default_params();
             mparams.n_gpu_layers = 0; // LLM always on CPU in WASM (WebGPU lacks SSM op support)
-            mparams.use_mmap = false;
-            mparams.use_mlock = false;
+            mparams.vocab_only = false;
+            mio_tts_compat::set_use_mmap(mparams, false);
+            mio_tts_compat::set_use_mlock(mparams, false);
+            mio_tts_compat::set_check_tensors(mparams, true);
             llm_model_ = llama_model_load_from_file(llm_model_path.c_str(), mparams);
             if (llm_model_ == nullptr) {
                 last_error_ = "failed to load llm model";
@@ -428,7 +431,7 @@ private:
             return false;
         }
 
-        llama_sampler * sampler = make_sampler(top_k, top_p, temp);
+        llama_sampler * sampler = make_sampler(top_k, top_p, temp, vocab);
         std::vector<llama_token> generated;
         generated.reserve((size_t) use_predict);
 

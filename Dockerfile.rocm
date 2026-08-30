@@ -1,0 +1,60 @@
+# ビルド用ステージ
+FROM rocm/dev-ubuntu-22.04:10.0.0-full AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROCM_PATH="/opt/rocm"
+ENV HIP_PATH="/opt/rocm"
+ENV PATH="/opt/rocm/bin:/opt/rocm/llvm/bin:${PATH}"
+ARG LLAMA_BRANCH=main
+
+# ビルドに必要なシステムパッケージのみインストール
+RUN apt-get update && apt-get install -y \
+    git \
+    cmake \
+    build-essential \
+    libsndfile1-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 1. mio-tts-cpp のソースを取得
+RUN git clone -b ${LLAMA_BRANCH} https://github.com/blue1st/mio-tts-cpp.git .
+
+# 2. 依存する llama.cpp を配置
+RUN git clone https://github.com/ggerganov/llama.cpp.git /app/llama.cpp
+
+# ビルド実行 (gfx1151 / Strix Point / Halo APU 等に対応)
+RUN mkdir build && cd build && \
+    CC=amdclang CXX=hipcc cmake .. \
+      -DLLAMA_CPP_SOURCE_DIR=/app/llama.cpp \
+      -DGGML_HIP=ON \
+      -DAMDGPU_TARGETS=gfx1151 \
+      -DGPU_TARGETS=gfx1151 \
+      -DCMAKE_BUILD_TYPE=Release && \
+    cmake --build . --config Release -j$(nproc)
+
+# ビルドされたすべての共有ライブラリ（libllama.so, libggml.so 等）を /app/build/lib に集約
+RUN mkdir -p /app/build/lib && \
+    find /app/build -name "*.so*" -exec cp -P {} /app/build/lib/ \;
+
+# 実行用ステージ
+FROM rocm/dev-ubuntu-22.04:10.0.0-full
+
+ENV ROCM_PATH="/opt/rocm"
+ENV PATH="/opt/rocm/bin:${PATH}"
+# /app/lib を優先的に検索するように追加
+ENV LD_LIBRARY_PATH="/app/lib:/app:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}"
+
+RUN apt-get update && apt-get install -y \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 実行ファイルと集約した共有ライブラリをコピー
+COPY --from=builder /app/build/mio-tts-server /app/mio-tts-server
+COPY --from=builder /app/build/lib/ /app/lib/
+
+EXPOSE 18089
+
+ENTRYPOINT ["./mio-tts-server"]

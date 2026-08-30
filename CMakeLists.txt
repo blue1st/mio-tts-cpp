@@ -29,6 +29,20 @@ else()
     set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 endif()
 
+# Auto-patch llama.cpp for ROCm APU host-pointer safety (getrows, rope, norm)
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/patch_rocm_safety.py")
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/scripts/patch_rocm_safety.py" "${LLAMA_CPP_SOURCE_DIR}"
+        RESULT_VARIABLE PATCH_RES
+        OUTPUT_VARIABLE PATCH_OUT
+        ERROR_VARIABLE PATCH_ERR
+    )
+    if(PATCH_OUT)
+        message(STATUS "${PATCH_OUT}")
+    endif()
+endif()
+
 add_subdirectory(${LLAMA_CPP_SOURCE_DIR} ${CMAKE_BINARY_DIR}/llama_cpp EXCLUDE_FROM_ALL)
 
 if(NOT TARGET cpp-httplib)

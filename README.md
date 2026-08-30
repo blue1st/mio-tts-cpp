@@ -183,6 +183,7 @@ See `examples/android/README.md` for details.
 
 #### API Endpoints
 
+##### Mio Native Endpoints
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/mio/tts` | Text-to-speech synthesis |
@@ -192,6 +193,25 @@ See `examples/android/README.md` for details.
 | `DELETE` | `/mio/references/:key` | Remove a cached reference |
 | `GET`  | `/health` | Server health / status |
 | `GET`  | `/` | Built-in web UI |
+
+##### OpenAI-Compatible Endpoints
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/v1/audio/speech` | OpenAI-compatible TTS (supports `model`, `voice`, `input`, `response_format`) |
+| `GET`  | `/v1/models` | List available models |
+| `GET`  | `/v1/audio/voices` | List preloaded speaker voices |
+
+### Docker (AMD ROCm / APU Strix Point & Halo)
+
+To run on AMD ROCm (e.g. Ryzen AI 300 / Strix Point APU `gfx1151`, Radeon GPUs):
+
+```bash
+# 1. Place models in ./models directory
+# 2. Build and start container
+docker compose -f docker-compose.rocm.yml build
+docker compose -f docker-compose.rocm.yml up -d
+docker compose -f docker-compose.rocm.yml logs -f
+```
 
 ### WASM (Browser)
 

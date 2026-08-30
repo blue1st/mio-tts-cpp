@@ -177,4 +177,169 @@ LLAMA_API void mio_tts_audio_free(float * audio);
 
 #ifdef __cplusplus
 }
+
+#include <algorithm>
+
+namespace mio_tts_compat {
+    template <typename T>
+    inline auto set_use_mmap_helper(T & p, bool val, int) -> decltype((void) (p.use_mmap = val)) {
+        p.use_mmap = val;
+    }
+    template <typename T>
+    inline void set_use_mmap_helper(T &, bool, long) {}
+
+    inline void set_use_mmap(llama_model_params & p, bool val) {
+        set_use_mmap_helper(p, val, 0);
+    }
+
+    template <typename T>
+    inline auto set_use_mlock_helper(T & p, bool val, int) -> decltype((void) (p.use_mlock = val)) {
+        p.use_mlock = val;
+    }
+    template <typename T>
+    inline void set_use_mlock_helper(T &, bool, long) {}
+
+    inline void set_use_mlock(llama_model_params & p, bool val) {
+        set_use_mlock_helper(p, val, 0);
+    }
+
+    template <typename T>
+    inline auto set_check_tensors_helper(T & p, bool val, int) -> decltype((void) (p.check_tensors = val)) {
+        p.check_tensors = val;
+    }
+    template <typename T>
+    inline void set_check_tensors_helper(T &, bool, long) {}
+
+    inline void set_check_tensors(llama_model_params & p, bool val) {
+        set_check_tensors_helper(p, val, 0);
+    }
+
+    // SFINAE getters (return -1 when the field does not exist)
+    template <typename T>
+    inline auto get_use_mmap_helper(const T & p, int) -> decltype((int) p.use_mmap) {
+        return (int) p.use_mmap;
+    }
+    template <typename T>
+    inline int get_use_mmap_helper(const T &, long) { return -1; }
+
+    inline int get_use_mmap(const llama_model_params & p) {
+        return get_use_mmap_helper(p, 0);
+    }
+
+    template <typename T>
+    inline auto get_check_tensors_helper(const T & p, int) -> decltype((int) p.check_tensors) {
+        return (int) p.check_tensors;
+    }
+    template <typename T>
+    inline int get_check_tensors_helper(const T &, long) { return -1; }
+
+    inline int get_check_tensors(const llama_model_params & p) {
+        return get_check_tensors_helper(p, 0);
+    }
+
+    template <typename T>
+    inline auto set_offload_kqv_helper(T & p, bool val, int) -> decltype((void) (p.offload_kqv = val)) {
+        p.offload_kqv = val;
+    }
+    template <typename T>
+    inline void set_offload_kqv_helper(T &, bool, long) {}
+
+    inline void set_offload_kqv(llama_context_params & p, bool val) {
+        set_offload_kqv_helper(p, val, 0);
+    }
+
+    template <typename T>
+    inline auto set_no_perf_helper(T & p, bool val, int) -> decltype((void) (p.no_perf = val)) {
+        p.no_perf = val;
+    }
+    template <typename T>
+    inline void set_no_perf_helper(T &, bool, long) {}
+
+    inline void set_no_perf(llama_context_params & p, bool val) {
+        set_no_perf_helper(p, val, 0);
+    }
+
+    template <typename T>
+    inline auto set_op_offload_helper(T & p, bool val, int) -> decltype((void) (p.op_offload = val)) {
+        p.op_offload = val;
+    }
+    template <typename T>
+    inline void set_op_offload_helper(T &, bool, long) {}
+
+    inline void set_op_offload(llama_context_params & p, bool val) {
+        set_op_offload_helper(p, val, 0);
+    }
+
+    template <typename T>
+    inline auto set_tensor_buft_overrides_helper(T & p, const llama_model_tensor_buft_override * val, int)
+        -> decltype((void) (p.tensor_buft_overrides = val)) {
+        p.tensor_buft_overrides = val;
+    }
+    template <typename T>
+    inline void set_tensor_buft_overrides_helper(T &, const llama_model_tensor_buft_override *, long) {}
+
+    inline void set_tensor_buft_overrides(llama_model_params & p, const llama_model_tensor_buft_override * val) {
+        set_tensor_buft_overrides_helper(p, val, 0);
+    }
+
+    inline ggml_backend_buffer_type_t get_default_gpu_buft() {
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            const auto type = ggml_backend_dev_type(dev);
+            if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+                return ggml_backend_dev_buffer_type(dev);
+            }
+        }
+        return nullptr;
+    }
+
+    inline struct llama_batch make_llama_batch_with_pos(
+            const llama_token * tokens,
+            int32_t n_tokens,
+            int32_t start_pos,
+            bool is_last_chunk,
+            int32_t n_alloc_min = 256) {
+        const int32_t n_alloc = std::max<int32_t>(n_tokens, n_alloc_min);
+        struct llama_batch batch = llama_batch_init(n_alloc, 0, 1);
+        const llama_token pad_tok = (tokens != nullptr && n_tokens > 0) ? tokens[0] : 0;
+        for (int32_t i = 0; i < n_tokens; ++i) {
+            batch.token[i] = tokens[i];
+            batch.pos[i] = start_pos + i;
+            batch.n_seq_id[i] = 1;
+            batch.seq_id[i][0] = 0;
+            batch.logits[i] = is_last_chunk && (i == n_tokens - 1);
+        }
+        for (int32_t i = n_tokens; i < n_alloc; ++i) {
+            batch.token[i] = pad_tok;
+            batch.pos[i] = start_pos;
+            batch.n_seq_id[i] = 1;
+            batch.seq_id[i][0] = 0;
+            batch.logits[i] = false;
+        }
+        batch.n_tokens = n_tokens;
+        return batch;
+    }
+
+    template <typename Fn>
+    inline auto call_penalties_5(Fn fn, int32_t n_vocab, int32_t last_n, float repeat, float freq, float present, int)
+        -> decltype(fn(n_vocab, last_n, repeat, freq, present)) {
+        return fn(n_vocab, last_n, repeat, freq, present);
+    }
+
+    template <typename Fn>
+    inline auto call_penalties_5(Fn fn, int32_t n_vocab, int32_t last_n, float repeat, float freq, float present, long)
+        -> decltype(fn(last_n, repeat, freq, present)) {
+        (void) n_vocab;
+        return fn(last_n, repeat, freq, present);
+    }
+
+    inline struct llama_sampler * compat_llama_sampler_init_penalties(
+            int32_t n_vocab,
+            int32_t penalty_last_n,
+            float penalty_repeat,
+            float penalty_freq,
+            float penalty_present) {
+        return call_penalties_5(&::llama_sampler_init_penalties, n_vocab, penalty_last_n, penalty_repeat, penalty_freq, penalty_present, 0);
+    }
+}
 #endif

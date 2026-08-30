@@ -1,0 +1,42 @@
+services:
+  mio-tts:
+    build:
+      context: .
+      dockerfile: Dockerfile.rocm
+    container_name: mio-tts-cpp-rocm
+    ports:
+      - "18089:18089"
+    devices:
+      - "/dev/kfd:/dev/kfd"
+      - "/dev/dri:/dev/dri"
+    security_opt:
+      - seccomp=unconfined
+    group_add:
+      - video
+      - render
+    volumes:
+      - ./models:/app/models
+      - ./output:/tmp
+    environment:
+      - ROCM_PATH=/opt/rocm
+      - HSA_OVERRIDE_GFX_VERSION=11.5.1
+      - HSA_ENABLE_SDMA=0
+      - HIP_VISIBLE_DEVICES=0
+      - AMD_DIRECT_DISPATCH=1
+      - HIP_FORCE_DEV_NUM=0
+    command: [
+      "-mv", "models/miocodec.gguf",
+      "-m", "models/MioTTS-2.6B-Q8_0.gguf",
+      "--tts-wavlm-model", "models/wavlm_base_plus_2l_f32.gguf",
+      "--reference-file-json", '[{"key":"jp_female","path":"models/jp_female.emb.gguf"},{"key":"jp_male","path":"models/jp_male.emb.gguf"}]',
+      "--host", "0.0.0.0",
+      "--port", "18089",
+      "-ngl", "99",
+      "--flash-attn", "on",
+      "--ctx-size", "4096",
+      "-n", "2000",
+      "--parallel", "2",
+      "--threads", "8",
+      "--output-dir", "/tmp"
+    ]
+    restart: unless-stopped
