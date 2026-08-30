@@ -46,8 +46,8 @@ def patch_rope(cuda_dir):
                 f.write(src)
             print(f"[patch_rocm] Patched {p}")
 
-def patch_fusion_disable(cuda_dir):
-    # Disable unsafe RMS_NORM + ROPE / RMS_NORM_MUL_ROPE fusion in all ggml-cuda files
+def patch_disable_fusions(cuda_dir):
+    # Safely disable unsafe RMS_NORM + ROPE fusions in ggml-cuda files
     for fname in os.listdir(cuda_dir):
         if not (fname.endswith(".cu") or fname.endswith(".cpp") or fname.endswith(".cuh")):
             continue
@@ -57,28 +57,22 @@ def patch_fusion_disable(cuda_dir):
         
         modified = False
         
-        # 1. Disable can_fuse pattern for RMS_NORM + ... + ROPE
-        pattern1 = r'(\bggml_cuda_can_fuse\s*\([^;]+GGML_OP_RMS_NORM[^;]+GGML_OP_ROPE[^;]+\))'
-        if re.search(pattern1, src):
-            src = re.sub(pattern1, r'(false /* disabled for ROCm host pointer safety */)', src)
-            modified = True
-
-        # 2. Disable can_fuse pattern for rms_norm_mul_rope
-        pattern2 = r'(\bggml_cuda_can_fuse_rms_norm_mul_rope\s*\([^)]+\))'
-        if re.search(pattern2, src):
-            src = re.sub(pattern2, r'(false)', src)
-            modified = True
-
-        # 3. Disable any "if (fused_rms_norm_mul_rope)" or similar check
-        pattern3 = r'(\bif\s*\(\s*ggml_cuda_can_fuse\s*\(\s*cgraph\s*,\s*i\s*,\s*\{\s*GGML_OP_RMS_NORM\s*,\s*GGML_OP_MUL\s*,\s*GGML_OP_ROPE\s*\}\s*,\s*\{\s*\}\s*\)\s*\))'
-        if re.search(pattern3, src):
-            src = re.sub(pattern3, r'if (false)', src)
-            modified = True
+        # Replace { GGML_OP_RMS_NORM, ..., GGML_OP_ROPE } with { GGML_OP_NONE }
+        patterns = [
+            r'\{\s*GGML_OP_RMS_NORM\s*,\s*GGML_OP_MUL\s*,\s*GGML_OP_ROPE\s*\}',
+            r'\{\s*GGML_OP_RMS_NORM\s*,\s*GGML_OP_ROPE\s*\}',
+            r'\{\s*GGML_OP_RMS_NORM\s*,\s*GGML_OP_MUL\s*,\s*GGML_OP_ROPE\s*,\s*GGML_OP_VIEW\s*,\s*GGML_OP_SET_ROWS\s*\}',
+            r'\{\s*GGML_OP_RMS_NORM\s*,\s*GGML_OP_ROPE\s*,\s*GGML_OP_VIEW\s*,\s*GGML_OP_SET_ROWS\s*\}'
+        ]
+        for pat in patterns:
+            if re.search(pat, src):
+                src = re.sub(pat, '{ GGML_OP_NONE }', src)
+                modified = True
 
         if modified:
             with open(p, "w", encoding="utf-8") as f:
                 f.write(src)
-            print(f"[patch_rocm] Disabled RMS_NORM+ROPE fusion in {fname}")
+            print(f"[patch_rocm] Safely disabled RMS_NORM+ROPE fusion in {fname}")
 
 def main():
     if len(sys.argv) < 2:
@@ -91,7 +85,7 @@ def main():
         sys.exit(0)
     patch_getrows(cuda_dir)
     patch_rope(cuda_dir)
-    patch_fusion_disable(cuda_dir)
+    patch_disable_fusions(cuda_dir)
 
 if __name__ == "__main__":
     main()
