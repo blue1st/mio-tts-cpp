@@ -178,6 +178,8 @@ LLAMA_API void mio_tts_audio_free(float * audio);
 #ifdef __cplusplus
 }
 
+#include <algorithm>
+
 namespace mio_tts_compat {
     template <typename T>
     inline auto set_use_mmap_helper(T & p, bool val, int) -> decltype((void) (p.use_mmap = val)) {
@@ -295,14 +297,24 @@ namespace mio_tts_compat {
             const llama_token * tokens,
             int32_t n_tokens,
             int32_t start_pos,
-            bool is_last_chunk) {
-        struct llama_batch batch = llama_batch_init(n_tokens, 0, 1);
+            bool is_last_chunk,
+            int32_t n_alloc_min = 256) {
+        const int32_t n_alloc = std::max<int32_t>(n_tokens, n_alloc_min);
+        struct llama_batch batch = llama_batch_init(n_alloc, 0, 1);
+        const llama_token pad_tok = (tokens != nullptr && n_tokens > 0) ? tokens[0] : 0;
         for (int32_t i = 0; i < n_tokens; ++i) {
             batch.token[i] = tokens[i];
             batch.pos[i] = start_pos + i;
             batch.n_seq_id[i] = 1;
             batch.seq_id[i][0] = 0;
             batch.logits[i] = is_last_chunk && (i == n_tokens - 1);
+        }
+        for (int32_t i = n_tokens; i < n_alloc; ++i) {
+            batch.token[i] = pad_tok;
+            batch.pos[i] = start_pos;
+            batch.n_seq_id[i] = 1;
+            batch.seq_id[i][0] = 0;
+            batch.logits[i] = false;
         }
         batch.n_tokens = n_tokens;
         return batch;
