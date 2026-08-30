@@ -201,9 +201,11 @@ See `examples/android/README.md` for details.
 | `GET`  | `/v1/models` | List available models |
 | `GET`  | `/v1/audio/voices` | List preloaded speaker voices |
 
-### Docker (AMD ROCm / APU Strix Point & Halo)
+### Docker (AMD ROCm / Strix Halo & Strix Point APU)
 
-To run on AMD ROCm (e.g. Ryzen AI 300 / Strix Point APU `gfx1151`, Radeon GPUs):
+> [!NOTE]
+> This Docker configuration (`Dockerfile.rocm` & `docker-compose.rocm.yml`) is specifically tailored and verified for **AMD Ryzen AI (Strix Point / Strix Halo APU, architecture `gfx1151` / `Radeon 8060S / 890M`)** with ROCm unified memory optimizations.
+> If using other AMD GPUs (e.g. RX 7900 XTX / `gfx1100`), adjust `AMDGPU_TARGETS` in `Dockerfile.rocm` and `HSA_OVERRIDE_GFX_VERSION` in `docker-compose.rocm.yml` accordingly.
 
 ```bash
 # 1. Place models in ./models directory
