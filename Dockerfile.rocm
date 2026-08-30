@@ -38,8 +38,30 @@ RUN mkdir build && cd build && \
 RUN mkdir -p /app/build/lib && \
     find /app/build -name "*.so*" -exec cp -P {} /app/build/lib/ \;
 
-# ランタイムに必要な最小限の ROCm / OpenMP 共有ライブラリを /app/rocm-lib に抽出
+# ランタイムに必要なすべての ROCm / OpenMP / hipBLAS 共有ライブラリを ldd と find で網羅的に抽出
 RUN mkdir -p /app/rocm-lib && \
+    python3 -c '\
+import subprocess, os, shutil\
+resolved = set()\
+frontier = set(["/app/build/mio-tts-server"] + [os.path.join("/app/build/lib", f) for f in os.listdir("/app/build/lib") if os.path.isfile(os.path.join("/app/build/lib", f))])\
+while frontier:\
+    curr = frontier.pop()\
+    if not os.path.exists(curr):\
+        continue\
+    try:\
+        out = subprocess.check_output(["ldd", curr], text=True, errors="ignore")\
+        for line in out.splitlines():\
+            if "=>" in line and "/opt/rocm" in line:\
+                p = line.split("=>")[1].split("(")[0].strip()\
+                if os.path.isfile(p) and p not in resolved:\
+                    resolved.add(p)\
+                    frontier.add(p)\
+    except Exception:\
+        pass\
+for lib in sorted(resolved):\
+    print("Resolved ROCm lib:", lib)\
+    shutil.copy(lib, "/app/rocm-lib/")\
+' && \
     find /opt/rocm \
       \( -name "libamdhip64.so*" -o \
          -name "libhiprtc.so*" -o \
@@ -47,6 +69,8 @@ RUN mkdir -p /app/rocm-lib && \
          -name "librocm-core.so*" -o \
          -name "librocm_smi64.so*" -o \
          -name "libamd_comgr.so*" -o \
+         -name "libhipblas*.so*" -o \
+         -name "librocblas*.so*" -o \
          -name "libomp*.so*" \) \
       -exec cp -P {} /app/rocm-lib/ \; 2>/dev/null || true
 
