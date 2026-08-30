@@ -38,15 +38,16 @@ RUN mkdir build && cd build && \
 RUN mkdir -p /app/build/lib && \
     find /app/build -name "*.so*" -exec cp -P {} /app/build/lib/ \;
 
-# ランタイムに必要な最小限の ROCm 共有ライブラリ（HIP/HSA/ROCm-core）を /app/rocm-lib に抽出
+# ランタイムに必要な最小限の ROCm / OpenMP 共有ライブラリを /app/rocm-lib に抽出
 RUN mkdir -p /app/rocm-lib && \
-    find /opt/rocm/lib /opt/rocm/core-*/lib \
+    find /opt/rocm/lib /opt/rocm/core-*/lib /opt/rocm/llvm/lib \
       \( -name "libamdhip64.so*" -o \
          -name "libhiprtc.so*" -o \
          -name "libhsa-runtime64.so*" -o \
          -name "librocm-core.so*" -o \
          -name "librocm_smi64.so*" -o \
-         -name "libamd_comgr.so*" \) \
+         -name "libamd_comgr.so*" -o \
+         -name "libomp*.so*" \) \
       -exec cp -P {} /app/rocm-lib/ \; 2>/dev/null || true
 
 # 実行用ステージ (軽量な Ubuntu ベース: 約300-500MB)
@@ -64,6 +65,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libdrm2 \
     libdrm-amdgpu1 \
     libelf1 \
+    libomp5 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
