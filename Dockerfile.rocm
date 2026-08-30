@@ -38,7 +38,6 @@ RUN mkdir -p /app/build/lib && \
     find /app/build -name "*.so*" -exec cp -P {} /app/build/lib/ \;
 
 # 実行用ステージ
-ARG ROCM_VERSION=10.0.0-full
 FROM rocm/dev-ubuntu-22.04:${ROCM_VERSION}
 
 ENV ROCM_PATH="/opt/rocm"
