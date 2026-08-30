@@ -38,41 +38,13 @@ RUN mkdir build && cd build && \
 RUN mkdir -p /app/build/lib && \
     find /app/build -name "*.so*" -exec cp -P {} /app/build/lib/ \;
 
-# ランタイムに必要なすべての ROCm / OpenMP / hipBLAS 共有ライブラリを ldd と find で網羅的に抽出
-RUN mkdir -p /app/rocm-lib && \
-    python3 -c '\
-import subprocess, os, shutil\
-resolved = set()\
-frontier = set(["/app/build/mio-tts-server"] + [os.path.join("/app/build/lib", f) for f in os.listdir("/app/build/lib") if os.path.isfile(os.path.join("/app/build/lib", f))])\
-while frontier:\
-    curr = frontier.pop()\
-    if not os.path.exists(curr):\
-        continue\
-    try:\
-        out = subprocess.check_output(["ldd", curr], text=True, errors="ignore")\
-        for line in out.splitlines():\
-            if "=>" in line and "/opt/rocm" in line:\
-                p = line.split("=>")[1].split("(")[0].strip()\
-                if os.path.isfile(p) and p not in resolved:\
-                    resolved.add(p)\
-                    frontier.add(p)\
-    except Exception:\
-        pass\
-for lib in sorted(resolved):\
-    print("Resolved ROCm lib:", lib)\
-    shutil.copy(lib, "/app/rocm-lib/")\
-' && \
-    find /opt/rocm \
-      \( -name "libamdhip64.so*" -o \
-         -name "libhiprtc.so*" -o \
-         -name "libhsa-runtime64.so*" -o \
-         -name "librocm-core.so*" -o \
-         -name "librocm_smi64.so*" -o \
-         -name "libamd_comgr.so*" -o \
-         -name "libhipblas*.so*" -o \
-         -name "librocblas*.so*" -o \
-         -name "libomp*.so*" \) \
-      -exec cp -P {} /app/rocm-lib/ \; 2>/dev/null || true
+# 不要な巨大コンパイラ・ヘッダー・ドキュメント等を削除し、/opt/rocm をランタイム用に軽量化
+RUN rm -rf /opt/rocm/llvm \
+           /opt/rocm/include \
+           /opt/rocm/share \
+           /opt/rocm/core-*/include \
+           /opt/rocm/core-*/share && \
+    find /opt/rocm -name "*.a" -delete
 
 # 実行用ステージ (軽量な Ubuntu ベース: 約300-500MB)
 FROM ubuntu:${UBUNTU_VERSION}
@@ -80,7 +52,7 @@ FROM ubuntu:${UBUNTU_VERSION}
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ROCM_PATH="/opt/rocm"
 ENV PATH="/opt/rocm/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}"
 
 # 実行に必要な最小限のシステムライブラリのみインストール
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -95,10 +67,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# 実行バイナリ、アプリ共有ライブラリ、および抽出した ROCm ランタイムをコピー
+# 実行バイナリ、アプリ共有ライブラリ、および軽量化された /opt/rocm をコピー
 COPY --from=builder /app/build/mio-tts-server /app/mio-tts-server
 COPY --from=builder /app/build/lib/ /app/lib/
-COPY --from=builder /app/rocm-lib/ /opt/rocm/lib/
+COPY --from=builder /opt/rocm/ /opt/rocm/
+
+# Push 前検証: 共有ライブラリの依存関係がすべて解決していること、およびバイナリ起動を確認
+RUN LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}" ldd /app/mio-tts-server && \
+    if LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}" ldd /app/mio-tts-server | grep "not found"; then \
+        echo "Error: missing shared library detected!" && exit 1; \
+    fi && \
+    LD_LIBRARY_PATH="/app/lib:/opt/rocm/lib:/opt/rocm/core-10.0/lib:${LD_LIBRARY_PATH}" ./mio-tts-server --help > /dev/null
 
 EXPOSE 18089
 
