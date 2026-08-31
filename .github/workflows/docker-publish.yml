@@ -72,10 +72,8 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=${{ matrix.tag_prefix }}-latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=${{ matrix.tag_prefix }}-{{sha}},enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=branch,prefix=${{ matrix.tag_prefix }}-
-            type=semver,pattern={{version}},prefix=${{ matrix.tag_prefix }}-
             type=sha,prefix=${{ matrix.tag_prefix }}-,format=short
+            type=semver,pattern={{version}},prefix=${{ matrix.tag_prefix }}-
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -88,3 +86,17 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  cleanup-untagged:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete untagged container images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: ${{ github.event.repository.name }}
+          package-type: 'container'
+          min-versions-to-keep: 0
+          delete-only-untagged-versions: 'true'
