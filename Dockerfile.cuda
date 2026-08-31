@@ -26,7 +26,9 @@ RUN mkdir build && cd build && \
     cmake .. \
       -DLLAMA_CPP_SOURCE_DIR=/app/llama.cpp \
       -DGGML_CUDA=ON \
+      -DGGML_CUDA_NO_VMM=ON \
       -DGGML_CUDA_FA_ALL_QUANTS=OFF \
+      -DCMAKE_EXE_LINKER_FLAGS="-Wl,--allow-shlib-undefined" \
       -DCMAKE_BUILD_TYPE=Release && \
     cmake --build . --config Release -j$(nproc)
 
